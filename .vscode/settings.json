@@ -1,0 +1,4 @@
+{
+    "ruff.lint.enable": false,
+    "basedpyright.analysis.typeCheckingMode": "off"
+}
