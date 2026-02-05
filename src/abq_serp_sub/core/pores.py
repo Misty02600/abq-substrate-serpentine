@@ -1,4 +1,14 @@
+# ============================================================================ #
+#                         孔隙生成函数                                          #
+# ============================================================================ #
+"""
+孔隙（圆孔）生成相关的纯计算函数，包括：
+  - calculate_circle_radius: 根据孔隙率计算圆孔半径
+  - generate_circles_grid_standard: 生成标准排列的圆孔网格
+  - generate_circles_grid: 生成带随机偏差的圆孔网格
+"""
 import numpy as np
+
 
 def generate_uniform_in_disk(radius):
     """
@@ -18,6 +28,7 @@ def generate_uniform_in_disk(radius):
 
     return (x, y)
 
+
 def generate_random_center(T_xi):
     """
     生成圆心的无量纲坐标偏差，服从圆盘内均匀分布
@@ -25,6 +36,7 @@ def generate_random_center(T_xi):
     - 返回一个随机生成的无量纲坐标偏差 (xi, eta)
     """
     return generate_uniform_in_disk(T_xi)
+
 
 def generate_random_diameter_deviation(T_delta):
     """
@@ -47,6 +59,32 @@ def calculate_circle_radius(square_side, porosity):
     area_circle = porosity * area_square
     r = np.sqrt(area_circle / np.pi)
     return r
+
+
+def generate_circles_grid_standard(n_rows, n_cols, square_side, radius):
+    """
+    生成标准排列（居中）的圆孔网格。
+
+    每个圆孔位于正方形单元的中心，半径相同。
+
+    Args:
+        n_rows: 网格行数
+        n_cols: 网格列数
+        square_side: 正方形单元边长
+        radius: 圆孔半径
+
+    Returns:
+        np.ndarray: 形状为 (n_rows, n_cols, 3) 的数组，每个元素为 [x, y, r]
+    """
+    circles = np.empty((n_rows, n_cols, 3))
+
+    for i in range(n_rows):
+        for j in range(n_cols):
+            center_x = (j + 0.5) * square_side
+            center_y = (i + 0.5) * square_side
+            circles[i, j, :] = [center_x, center_y, radius]
+
+    return circles
 
 
 def generate_circles_grid(n_rows, n_cols, square_side, radius_nom, T_xi, T_delta):

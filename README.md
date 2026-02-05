@@ -1,2 +1,1 @@
-科研用的abquse顶层封装模块= =
-~~abaqus的api太乱了纯属瞎写~~
+某篇论文的abaqus配置解析+Python脚本封装史山

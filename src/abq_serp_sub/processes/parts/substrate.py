@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -7,50 +8,168 @@ from regionToolset import Region
 
 if TYPE_CHECKING:
     from abaqus.Model.Model import Model
+    from abaqus.Part.Part import Part
 
-from .pores import calculate_circle_radius, generate_circles_grid
-from ..utils.abaqus_utils import filter_edges_by_radius, pick_by_index, filter_objects_by_vertex_bounds
+from abq_serp_sub.core.pores import calculate_circle_radius, generate_circles_grid
+from abq_serp_sub.utils.abaqus_utils import (
+    filter_edges_by_radius,
+    pick_by_index,
+    filter_objects_by_vertex_bounds,
+)
+
+# 配置类从 core/context 子包导入
+from abq_serp_sub.core.context import (
+    HyperelasticMaterialConfig,
+    SolidSubstrateGeomConfig,
+    PorousSubstrateGeomConfig,
+    SubstrateMeshConfig,
+    SubstrateConfig,
+    SolidSubstrateConfig,
+    PorousSubstrateConfig,
+)
 
 
-# region 多孔基底构建
-def build_porous_substrate(
-    modelname: str,
-    partname: str,
-    circles: np.ndarray,  # 圆孔位置和大小数组 (n_rows, n_cols, 3)
-    square_size: float,  # 正方形边长
-    depth: float = 0.25,  # 拉伸深度
-    substrate_seed_size: float = 0.01,  # 基底布种尺寸
-    generate_mesh: bool = True,  # 是否在此函数中生成网格
-):
+def build_substrate(config: SubstrateConfig):
     """
-    根据给定的圆孔布局创建多孔基底部件
+    根据配置类型自动选择构建实心或多孔基底。
+
+    Parameters
+    ----------
+    config : SubstrateConfig
+        基底配置，可以是 SolidSubstrateConfig 或 PorousSubstrateConfig
+
+    Returns
+    -------
+    Part
+        创建好的基底部件
+    """
+    if isinstance(config, PorousSubstrateConfig):
+        return build_porous_substrate(config)
+    else:
+        return build_solid_substrate(config)
+
+
+# region 私有辅助函数
+def _get_or_create_model(modelname: str) -> Model:
+    """
+    获取已存在的模型，或创建新模型。
 
     Parameters
     ----------
     modelname : str
         Abaqus 模型名称（mdb.models 的键）。
-    partname : str
-        生成的部件名称，与草图名称相同。
-    circles : np.ndarray
-        圆孔数据数组，其形状为 (n_rows, n_cols, 3)，每个元素为 (x, y, r)。
-    square_size : float
-        正方形边长。
-    depth : float, optional
-        拉伸深度，默认为 0.25。
-    substrate_seed_size : float, optional
-        基底布种尺寸，默认为 0.01。
-    generate_mesh : bool, optional
-        是否在此函数中生成网格，默认为 True。
+
+    Returns
+    -------
+    Model
+        Abaqus 模型对象。
+    """
+    try:
+        return mdb.models[modelname]
+    except KeyError:
+        return mdb.Model(name=modelname)
+
+
+def _create_hyperelastic_material(model: Model, config: HyperelasticMaterialConfig) -> None:
+    """
+    在模型中创建超弹性材料（Mooney-Rivlin 模型）。
+
+    Parameters
+    ----------
+    model : Model
+        Abaqus 模型对象。
+    config : HyperelasticMaterialConfig
+        超弹性材料配置，必须显式提供。
+    """
+    material = model.Material(name=config.name)
+    return material.Hyperelastic(
+        materialType=ISOTROPIC,
+        testData=OFF,
+        type=MOONEY_RIVLIN,
+        volumetricResponse=VOLUMETRIC_DATA,
+        table=((config.c1, config.c2, config.d),),
+    )
+
+
+def _assign_section_to_part(model: Model, part: Part, material_name: str) -> None:
+    """
+    创建均质实体截面并赋予部件的所有单元。
+
+    Parameters
+    ----------
+    model : Model
+        Abaqus 模型对象。
+    part : Part
+        要赋予截面的部件。
+    material_name : str
+        材料名称。
+    """
+    section_name = f"{material_name}-section"
+    model.HomogeneousSolidSection(name=section_name, material=material_name)
+    cells = part.cells
+    region = Region(cells=cells)
+    return part.SectionAssignment(region=region, sectionName=section_name)
+
+
+def _seed_substrate_part(sub_part: Part, seed_size: float) -> None:
+    """
+    对基底部件进行布种，包括全局布种和厚度边偏置布种。
+
+    Parameters
+    ----------
+    part : Part
+        要布种的部件。
+    seed_size : float
+        全局布种尺寸。
+    """
+    # 全局布种
+    sub_part.seedPart(size=seed_size, deviationFactor=0.1, minSizeFactor=0.1)
+
+    # 厚度边使用偏置布种
+    thickness_edges = sub_part.sets["ThicknessEdges"].edges
+    sub_part.seedEdgeByBias(
+        biasMethod=SINGLE,
+        end2Edges=thickness_edges,
+        ratio=2,
+        number=7,
+        constraint=FINER,
+    )
+
+    # 生成网格
+    sub_part.generateMesh()
+# endregion
+
+
+# region 多孔基底构建
+def build_porous_substrate(config: PorousSubstrateConfig):
+    """
+    根据给定的圆孔布局创建多孔基底部件。
+
+    Parameters
+    ----------
+    config : PorousSubstrateConfig
+        多孔基底配置对象，包含：
+        - geom.circles: 圆孔数据数组 (n_rows, n_cols, 3)
+        - geom.square_size: 正方形边长
+        - geom.depth: 拉伸深度
+        - part.modelname: 模型名称
+        - part.partname: 部件名称
+        - part.seed_size: 布种尺寸
 
     Returns
     -------
     Part
         创建好的部件对象，用于后续分析操作。
     """
-    try:
-        model = mdb.models[modelname]
-    except KeyError:
-        model = mdb.Model(name=modelname)
+    # 提取配置
+    circles = config.geom.circles
+    square_size = config.geom.square_size
+    depth = config.geom.depth
+    modelname = config.modelname
+    partname = config.partname
+    substrate_seed_size = config.mesh.seed_size
+
+    model = _get_or_create_model(modelname)
 
     # -------------- 计算关键尺寸 -------------- #
     n_rows, n_cols = circles.shape[:2]
@@ -181,82 +300,47 @@ def build_porous_substrate(
     top_line_edges = filter_edges_by_radius(top_edges, non_arc=True)
     part.Set(name="TopLineEdges", edges=top_line_edges)
 
-    # --------------- 定义材料 --------------- #
-    pdms = model.Material(name="PDMS")
-    pdms.Hyperelastic(
-        materialType=ISOTROPIC,
-        testData=OFF,
-        type=MOONEY_RIVLIN,
-        volumetricResponse=VOLUMETRIC_DATA,
-        table=((0.27027, 0.067568, 0.12),),
-    )
-
-    # -------------- 创建分配截面 ------------- #
-    model.HomogeneousSolidSection(name="PDMS-section", material="PDMS")
-    cells = part.cells
-    region = Region(cells=cells)
-    part.SectionAssignment(region=region, sectionName="PDMS-section")
+    # --------------- 定义材料与截面 --------------- #
+    _create_hyperelastic_material(model, config.material)
+    _assign_section_to_part(model, part, config.material.name)
 
     # --------------- 布种划分网格 -------------- #
-    # 使用全局布种
-    part.seedPart(size=substrate_seed_size, deviationFactor=0.1, minSizeFactor=0.1)
-    # 厚度边使用偏置布种
-    thickness_edges = part.sets["ThicknessEdges"].edges
-    part.seedEdgeByBias(
-        biasMethod=SINGLE,
-        end2Edges=thickness_edges,
-        ratio=2,
-        number=7,
-        constraint=FINER,
-    )
-
-    # 根据参数决定是否生成网格
-    if generate_mesh:
-        part.generateMesh()
+    _seed_substrate_part(part, substrate_seed_size)
 
     return part
 # endregion
 
 
 # region 实心基底构建
-def build_solid_substrate(
-    modelname: str,
-    partname: str,
-    length: float,
-    width: float,
-    depth: float = 0.25,
-    substrate_seed_size: float = 0.01,
-    generate_mesh: bool = True,
-):
+def build_solid_substrate(config: SolidSubstrateConfig):
     """
-    创建实心矩形基底部件（无孔洞）
+    创建实心矩形基底部件（无孔洞）。
 
     Parameters
     ----------
-    modelname : str
-        Abaqus 模型名称（mdb.models 的键）。
-    partname : str
-        生成的部件名称。
-    length : float
-        基底长度（X方向）。
-    width : float
-        基底宽度（Y方向）。
-    depth : float, optional
-        拉伸深度（Z方向），默认为 0.25。
-    substrate_seed_size : float, optional
-        基底布种尺寸，默认为 0.01。
-    generate_mesh : bool, optional
-        是否在此函数中生成网格，默认为 True。
+    config : SolidSubstrateConfig
+        实心基底配置对象，包含：
+        - geom.length: 基底长度（X方向）
+        - geom.width: 基底宽度（Y方向）
+        - geom.depth: 拉伸深度（Z方向）
+        - part.modelname: 模型名称
+        - part.partname: 部件名称
+        - part.seed_size: 布种尺寸
 
     Returns
     -------
     Part
         创建好的部件对象，用于后续分析操作。
     """
-    try:
-        model = mdb.models[modelname]
-    except KeyError:
-        model = mdb.Model(name=modelname)
+    # 提取配置
+    length = config.geom.length
+    width = config.geom.width
+    depth = config.geom.depth
+    modelname = config.modelname
+    partname = config.partname
+    substrate_seed_size = config.mesh.seed_size
+
+    model = _get_or_create_model(modelname)
 
     # region 绘制草图
     part_sk = model.ConstrainedSketch(
@@ -316,36 +400,12 @@ def build_solid_substrate(
     # endregion
 
     # region 定义材料与截面
-    pdms = model.Material(name="PDMS")
-    pdms.Hyperelastic(
-        materialType=ISOTROPIC,
-        testData=OFF,
-        type=MOONEY_RIVLIN,
-        volumetricResponse=VOLUMETRIC_DATA,
-        table=((0.27027, 0.067568, 0.12),),
-    )
-
-    model.HomogeneousSolidSection(name="PDMS-section", material="PDMS")
-    cells = part.cells
-    region = Region(cells=cells)
-    part.SectionAssignment(region=region, sectionName="PDMS-section")
+    _create_hyperelastic_material(model, config.material)
+    _assign_section_to_part(model, part, config.material.name)
     # endregion
 
     # region 布种划分网格
-    part.seedPart(size=substrate_seed_size, deviationFactor=0.1, minSizeFactor=0.1)
-
-    # 厚度边使用偏置布种
-    thickness_edges = part.sets["ThicknessEdges"].edges
-    part.seedEdgeByBias(
-        biasMethod=SINGLE,
-        end2Edges=thickness_edges,
-        ratio=2,
-        number=7,
-        constraint=FINER,
-    )
-
-    if generate_mesh:
-        part.generateMesh()
+    _seed_substrate_part(part, substrate_seed_size)
     # endregion
 
     return part

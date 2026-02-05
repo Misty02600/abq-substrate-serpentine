@@ -20,8 +20,8 @@ except NameError:                       # ② 只有 GUI ▸ Run Script 才会�
 # 把脚本目录放到 import 搜索路径最前
 sys.path.append(str(SCRIPT_DIR))
 
-from src.model.substrate import build_solid_substrate
-from src.model.wire import build_serpentine_wire_no_caps
+from src.model.parts.substrate import build_solid_substrate
+from src.model.parts.wire import build_serpentine_wire_no_caps
 from src.utils.abaqus_utils import get_bounding_box
 
 
@@ -379,14 +379,14 @@ if __name__ == "__main__":
         substrate_width=5.0,
         depth=0.5,
         substrate_seed_size=0.03,
-        w=0.2,
-        l_1=3.0,
-        l_2=2.0,
+        w=0.5,
+        l_1=6.0,
+        l_2=6.0,
         m=1,
         wire_seed_size=0.03,
         origin=None,
-        pi_thickness=0.005,
-        cu_thickness=0.003,
+        pi_thickness=0.004,      # 4μm
+        cu_thickness=0.0003,     # 300nm
         u1=2,
         u2=2,
         num_cpus=16,

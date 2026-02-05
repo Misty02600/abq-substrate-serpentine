@@ -1,0 +1,23 @@
+name: abaqus
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  # --- 核心依赖（conda-forge）---
+  # 使用主版本约束，让 conda 自动解析兼容版本
+  - numpy>=1.26,<2
+  - pandas>=2.0
+  - scipy>=1.10
+  - pydantic>=2.0
+  - hydra-core>=1.3
+  - omegaconf>=2.3
+  - pip
+  - pip:
+      # conda-forge 中无对应版本，使用 pip 安装
+      - hydra-list-sweeper==1.1.0
+      # --- 开发依赖（类型提示）---
+      - abqpy>=2024.9,<2025.0
+      # 以可编辑模式安装本项目（安装后可在任意位置使用 abq-gen-params 命令）
+      - -e .
+

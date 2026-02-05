@@ -1,7 +1,8 @@
-# ------------------------------------ #
-#       修正导线两端粘结圆部分的位置，使圆心处于对称轴上       #
-# ------------------------------------ #
+"""蛇形导线部件构建模块"""
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
+import logging
 
 import numpy as np
 from abaqus import *
@@ -9,52 +10,75 @@ from abaqusConstants import *
 
 if TYPE_CHECKING:
     from abaqus.Model.Model import Model
+    from abaqus.Part.Part import Part
+
+# 配置类从 core/context 子包导入
+from abq_serp_sub.core.context import (
+    RotationCenter,
+    WireGeomConfig,
+    WireSectionConfig,
+    WireMeshConfig,
+    WireConfig,
+)
 
 
-def build_serpentine_wire(
-    modelname: str,
-    partname: str,
-    w: float = 0.05,  # 蛇形线宽
-    l_1: float = 0.5,  # 单元体水平节距（一个完整周期宽度）
-    l_2: float = 0.5,  # 竖直直线段长度
-    m: int = 4,  # 周期数
-    wire_seed_size: float = 0.005,  # 蛇形线布种尺寸
-    pi_thickness: float = 0.003,  # PI 单层厚度
-    cu_thickness: float = 0.0006,  # Cu 单层厚度
-    origin: tuple[float, float, float] = (0.0, 0.0, 0.0),  # 草图原点坐标
-):
+# region 私有辅助函数
+
+def _create_wire_materials(model: Model, config: WireSectionConfig) -> None:
+    """
+    在模型中创建导线材料（PI 和 Cu）。
+
+    Parameters
+    ----------
+    model : Model
+        Abaqus 模型对象。
+    config : WireMaterialConfig
+        导线材料配置。
+    """
+    # 创建 PI 材料
+    pi = config.pi_elastic
+    model.Material(name=pi.name)
+    model.materials[pi.name].Elastic(table=((pi.youngs_modulus, pi.poissons_ratio),))
+
+    # 创建 Cu 材料
+    cu = config.cu_elastic
+    model.Material(name=cu.name)
+    model.materials[cu.name].Elastic(table=((cu.youngs_modulus, cu.poissons_ratio),))
+
+# endregion
+
+
+# region 蛇形导线构建（带端盘）
+
+def build_serpentine_wire(config: WireConfig):
     """
     在指定模型中创建一个二维蛇形导线（PI-Cu-PI）壳单元草图，
     并生成同名 Part。
 
     Parameters
     ----------
-    modelname : str
-        Abaqus 模型名称（`mdb.models` 的键）。
-    partname : str
-        生成的 Part 与草图名称。
-    w : float
-        蛇形导线带状线宽。
-    l_1 : float
-        一个完整周期沿 X 方向的宽度。
-    l_2 : float
-        每条竖直直线段的长度（决定 y_top）。
-    m : int
-        周期数（完整周期的个数）。
-    wire_seed_size : float
-        蛇形线布种尺寸。
-    pi_thickness : float
-        PI 单层厚度（上下两层相同）。
-    cu_thickness : float
-        Cu 单层厚度（中间层）。
-    origin : tuple[float, float, float]
-        草图原点坐标。
+    config : WireConfig
+        导线配置对象，包含：
+        - geom: 几何参数（w, l_1, l_2, m）
+        - material: 材料参数（pi_thickness, cu_thickness）
+        - part: 部件参数（modelname, partname, seed_size, origin）
 
     Returns
     -------
     Part
         创建好的 Part 对象，便于后续引用。
     """
+    # 提取配置
+    w = config.geom.w
+    l_1 = config.geom.l_1
+    l_2 = config.geom.l_2
+    m = config.geom.m
+    origin = (0.0, 0.0, 0.0)  # 固定原点，导线在 assembly 阶段居中
+    pi_thickness = config.section.pi_thickness
+    cu_thickness = config.section.cu_thickness
+    modelname = config.modelname
+    partname = config.partname
+    wire_seed_size = config.mesh.seed_size
 
     try:
         model = mdb.models[modelname]
@@ -296,11 +320,11 @@ def build_serpentine_wire(
     part.SetByBoolean(name='Bottom', sets=bottom_sets)
 
     # --------------- 定义材料 --------------- #
-    model.Material(name="PI")
-    model.materials["PI"].Elastic(table=((2500.0, 0.27),))
+    section_config = config.section
+    _create_wire_materials(model, section_config)
 
-    model.Material(name="Cu")
-    model.materials["Cu"].Elastic(table=((130000.0, 0.34),))
+    pi_name = section_config.pi_elastic.name
+    cu_name = section_config.cu_elastic.name
 
     # --------------- 创建复合层 --------------- #
     region = part.sets["All"]
@@ -349,7 +373,7 @@ def build_serpentine_wire(
         suppressed=False,
         plyName="PI-Bot",
         region=region,
-        material="PI",
+        material=pi_name,
         thicknessType=SPECIFY_THICKNESS,
         thickness=pi_thickness,
         orientationType=SPECIFY_ORIENT,
@@ -366,7 +390,7 @@ def build_serpentine_wire(
         suppressed=False,
         plyName="Cu",
         region=region,
-        material="Cu",
+        material=cu_name,
         thicknessType=SPECIFY_THICKNESS,
         thickness=cu_thickness,
         orientationType=SPECIFY_ORIENT,
@@ -383,7 +407,7 @@ def build_serpentine_wire(
         suppressed=False,
         plyName="PI-Top",
         region=region,
-        material="PI",
+        material=pi_name,
         thicknessType=SPECIFY_THICKNESS,
         thickness=pi_thickness,
         orientationType=SPECIFY_ORIENT,
@@ -403,37 +427,40 @@ def build_serpentine_wire(
 
     return part
 
+# endregion
 
-def build_serpentine_wire_no_caps(
-    modelname: str,
-    partname: str,
-    w: float = 0.05,
-    l_1: float = 0.5,
-    l_2: float = 0.5,
-    m: int = 4,
-    wire_seed_size: float = 0.005,
-    pi_thickness: float = 0.003,
-    cu_thickness: float = 0.0006,
-    origin: tuple[float, float, float] = (0.0, 0.0, 0.0),
-):
+
+# region 蛇形导线构建（无端盘）
+
+def build_serpentine_wire_no_caps(config: WireConfig):
     """
     创建无端盘的二维蛇形导线壳单元草图并生成 Part。
 
-    Args:
-        modelname (str): Abaqus 模型名称（mdb.models 的键）。
-        partname (str): 生成的 Part 与草图名称。
-        w (float): 蛇形导线带状线宽。
-        l_1 (float): 一个完整周期沿 X 方向的宽度。
-        l_2 (float): 竖直直线段长度。
-        m (int): 周期数（完整周期个数）。
-        wire_seed_size (float): 蛇形线布种尺寸。
-        pi_thickness (float): PI 单层厚度（上下两层相同）。
-        cu_thickness (float): Cu 单层厚度（中间层）。
-        origin (tuple[float, float, float]): 草图原点坐标。
+    Parameters
+    ----------
+    config : WireConfig
+        导线配置对象，包含：
+        - geom: 几何参数（w, l_1, l_2, m）
+        - material: 材料参数（pi_thickness, cu_thickness）
+        - part: 部件参数（modelname, partname, seed_size, origin）
 
-    Returns:
-        Part: 创建好的 Part 对象。
+    Returns
+    -------
+    Part
+        创建好的 Part 对象。
     """
+    # 提取配置
+    w = config.geom.w
+    l_1 = config.geom.l_1
+    l_2 = config.geom.l_2
+    m = config.geom.m
+    origin = (0.0, 0.0, 0.0)  # 固定原点，导线在 assembly 阶段居中
+    pi_thickness = config.section.pi_thickness
+    cu_thickness = config.section.cu_thickness
+    modelname = config.modelname
+    partname = config.partname
+    wire_seed_size = config.mesh.seed_size
+
     try:
         model = mdb.models[modelname]
     except KeyError:
@@ -562,11 +589,12 @@ def build_serpentine_wire_no_caps(
     bottom_sets = tuple(part.sets[f"Bottom-{i+1}-{j}"] for i in range(m) for j in range(1, 7))
     part.SetByBoolean(name="Bottom", sets=bottom_sets)
 
-    model.Material(name="PI")
-    model.materials["PI"].Elastic(table=((2500.0, 0.27),))
+    # --------------- 定义材料 --------------- #
+    section_config = config.section
+    _create_wire_materials(model, section_config)
 
-    model.Material(name="Cu")
-    model.materials["Cu"].Elastic(table=((130000.0, 0.34),))
+    pi_name = section_config.pi_elastic.name
+    cu_name = section_config.cu_elastic.name
 
     region = part.sets["All"]
 
@@ -612,7 +640,7 @@ def build_serpentine_wire_no_caps(
         suppressed=False,
         plyName="PI-Bot",
         region=region,
-        material="PI",
+        material=pi_name,
         thicknessType=SPECIFY_THICKNESS,
         thickness=pi_thickness,
         orientationType=SPECIFY_ORIENT,
@@ -628,7 +656,7 @@ def build_serpentine_wire_no_caps(
         suppressed=False,
         plyName="Cu",
         region=region,
-        material="Cu",
+        material=cu_name,
         thicknessType=SPECIFY_THICKNESS,
         thickness=cu_thickness,
         orientationType=SPECIFY_ORIENT,
@@ -644,7 +672,7 @@ def build_serpentine_wire_no_caps(
         suppressed=False,
         plyName="PI-Top",
         region=region,
-        material="PI",
+        material=pi_name,
         thicknessType=SPECIFY_THICKNESS,
         thickness=pi_thickness,
         orientationType=SPECIFY_ORIENT,
@@ -663,36 +691,54 @@ def build_serpentine_wire_no_caps(
 
     return part
 
+# endregion
 
+
+# region if_main
 
 if __name__ == "__main__":
-    # 这是一个用于在ABAQUS环境中调试 build_serpentine_wire 函数的测试脚本
+    # 配置 logging
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    # 测试脚本：在 ABAQUS 环境中调试 build_serpentine_wire 函数
     # 运行方式: abaqus python wire.py
 
-    print("=" * 50)
-    print("Testing build_serpentine_wire function...")
+    logging.info("=" * 50)
+    logging.info("Testing build_serpentine_wire function...")
 
-    # 1. 定义测试参数
-    test_model_name = "WireTestModel"
-    test_part_name = "TestWirePart"
-    test_params = {
-        "w": 0.05,
-        "l_1": 0.5,
-        "l_2": 0.5,
-        "m": 4,
-        "origin": (1.0, 1.0, 0.25),
-    }
+    # 使用配置类创建测试参数（使用预定义材料实例）
+    from abq_serp_sub.processes.parts.material_instances import PI, CU
 
-    print("\nParameters used for testing:")
-    for key, value in test_params.items():
-        print(f"  - {key}: {value}")
-
-    # 2. 调用函数创建部件
-    wire_part = build_serpentine_wire(
-        modelname=test_model_name,
-        partname=test_part_name,
-        **test_params
+    test_config = WireConfig(
+        modelname="WireTestModel",
+        partname="TestWirePart",
+        geom=WireGeomConfig(
+            w=0.05,
+            l_1=0.5,
+            l_2=0.5,
+            m=4,
+            rotation_angle=0.0,
+            rotation_center=RotationCenter.PART_CENTER,
+            has_end_caps=True,
+            flip_vertical=False,
+        ),
+        section=WireSectionConfig(
+            pi_thickness=0.003,
+            cu_thickness=0.0006,
+            pi_elastic=PI,
+            cu_elastic=CU,
+        ),
+        mesh=WireMeshConfig(seed_size=0.005),
     )
-    print(f"\nSuccessfully created part '{wire_part.name}' in model '{test_model_name}'.")
 
-    print("=" * 50)
+    logging.info("\nParameters used for testing:")
+    logging.info(f"  - geom: w={test_config.geom.w}, l_1={test_config.geom.l_1}, l_2={test_config.geom.l_2}, m={test_config.geom.m}")
+    logging.info(f"  - origin: {test_config.geom.origin}")
+
+    # 调用函数创建部件
+    wire_part = build_serpentine_wire_no_caps(test_config)
+    logging.info(f"\nSuccessfully created part '{wire_part.name}' in model '{test_config.modelname}'.")
+
+    logging.info("=" * 50)
+
+# end region
