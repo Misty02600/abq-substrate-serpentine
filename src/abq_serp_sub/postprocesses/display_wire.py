@@ -48,6 +48,11 @@ def display_wire_strain_contours(ply_location, max_strain=0.003):
         'TOP_AND_BOTTOM': TOP_AND_BOTTOM
     }
 
+    if ply_location not in ply_location_map:
+        raise ValueError(
+            f"无效的 ply_location: '{ply_location}'，"
+            f"可选值: {list(ply_location_map.keys())}"
+        )
     ply_result_location = ply_location_map[ply_location]
 
     # 设置基于层的截面点方案

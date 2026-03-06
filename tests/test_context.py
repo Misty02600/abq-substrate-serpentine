@@ -19,10 +19,8 @@ from abq_serp_sub.core.context import (
     WireMeshConfig,
     WireConfig,
     # 模型配置
-    LoadingConfig,
     ComputingConfig,
     InteractionConfig,
-    OutputConfig,
     # 分析步配置
     StepType,
     StaticStepConfig,
@@ -256,16 +254,6 @@ class TestAnalysisStepConfig:
 
 
 # region 模型配置测试
-class TestLoadingConfig:
-    """加载配置测试"""
-
-    def test_create_config(self):
-        """测试创建配置"""
-        loading = LoadingConfig(u1=0.1, u2=0.5)
-        assert loading.u1 == 0.1
-        assert loading.u2 == 0.5
-
-
 class TestComputingConfig:
     """计算配置测试"""
 
@@ -285,13 +273,4 @@ class TestInteractionConfig:
         assert interaction.use_cohesive is False
 
 
-class TestOutputConfig:
-    """输出配置测试"""
 
-    def test_create_config(self):
-        """测试创建配置"""
-        output = OutputConfig(global_output=True)
-        assert output.global_output is True
-
-
-# endregion

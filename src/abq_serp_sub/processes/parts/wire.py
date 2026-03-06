@@ -38,11 +38,17 @@ def _create_wire_materials(model: Model, config: WireSectionConfig) -> None:
     # 创建 PI 材料
     pi = config.pi_elastic
     model.Material(name=pi.name)
+    # 如果指定了密度，添加密度属性（动力学分析必需）
+    if pi.density is not None:
+        model.materials[pi.name].Density(table=((pi.density,),))
     model.materials[pi.name].Elastic(table=((pi.youngs_modulus, pi.poissons_ratio),))
 
     # 创建 Cu 材料
     cu = config.cu_elastic
     model.Material(name=cu.name)
+    # 如果指定了密度，添加密度属性（动力学分析必需）
+    if cu.density is not None:
+        model.materials[cu.name].Density(table=((cu.density,),))
     model.materials[cu.name].Elastic(table=((cu.youngs_modulus, cu.poissons_ratio),))
 
 # endregion
@@ -94,6 +100,12 @@ def build_serpentine_wire(config: WireConfig):
     y_mid: float = 0.0
     y_bot: float = y_mid - l_2 / 2.0
     y_top: float = y_mid + l_2 / 2.0
+
+    # 垂直翻转：在草图阶段翻转 Y 坐标
+    # 这样可以保持 Top/Bottom 集合的语义正确性
+    flip_vertical = config.geom.flip_vertical
+    if flip_vertical:
+        y_bot, y_top = -y_top, -y_bot
 
     # 部件最右侧(最后一个周期末)端点坐标
     x_inner_right: float = m * l_1 - w / 2  # 平移总体左移 w/2
@@ -475,6 +487,11 @@ def build_serpentine_wire_no_caps(config: WireConfig):
     y_bot: float = y_mid - l_2 / 2.0
     y_top: float = y_mid + l_2 / 2.0
 
+    # 垂直翻转：在草图阶段翻转 Y 坐标
+    flip_vertical = config.geom.flip_vertical
+    if flip_vertical:
+        y_bot, y_top = -y_top, -y_bot
+
     x_inner_right: float = m * l_1 - w / 2
     x_outer_right: float = x_inner_right + w
 
@@ -733,7 +750,7 @@ if __name__ == "__main__":
 
     logging.info("\nParameters used for testing:")
     logging.info(f"  - geom: w={test_config.geom.w}, l_1={test_config.geom.l_1}, l_2={test_config.geom.l_2}, m={test_config.geom.m}")
-    logging.info(f"  - origin: {test_config.geom.origin}")
+    logging.info(f"  - rotation_center: {test_config.geom.rotation_center}, rotation_angle: {test_config.geom.rotation_angle}")
 
     # 调用函数创建部件
     wire_part = build_serpentine_wire_no_caps(test_config)

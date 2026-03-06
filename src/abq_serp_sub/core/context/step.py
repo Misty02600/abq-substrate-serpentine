@@ -13,7 +13,7 @@
 """
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Optional, Tuple
 
 
 class StepType(Enum):
@@ -36,11 +36,15 @@ class StepIncrementConfig:
         initial_inc: 初始增量
         min_inc: 最小增量
         max_inc: 最大增量
+        stabilization_magnitude: 稳定化幅度（耗散能比例法）
+        adaptive_damping_ratio: 自适应阻尼比
     """
     max_num_inc: int
     initial_inc: float
     min_inc: float
     max_inc: float
+    stabilization_magnitude: float = 0.002
+    adaptive_damping_ratio: float = 0.2
 
 
 # 别名，语义更清晰
@@ -178,6 +182,27 @@ def get_default_explicit_dynamics_config() -> ExplicitDynamicsStepConfig:
 # endregion
 
 
+# region 场输出配置
+
+
+@dataclass(frozen=True)
+class FieldOutputConfig:
+    """
+    场输出配置。
+
+    Attributes:
+        variables: 输出变量元组 (如 'S', 'E', 'U', 'RF')
+        frequency: 输出频率 (每 N 个增量步输出一次)
+        position: 输出位置 ('INTEGRATION_POINTS', 'NODAL' 等)
+    """
+    variables: Tuple[str, ...] = ('S', 'E', 'U', 'RF')
+    frequency: int = 1
+    position: str = 'INTEGRATION_POINTS'
+
+
+# endregion
+
+
 # region 分析步序列配置
 
 # 统一的 StepConfig 类型别名
@@ -194,15 +219,19 @@ class AnalysisStepConfig:
     Attributes:
         step_type: 分析步类型（静态/隐式动力学/显式动力学）
         config: 对应类型的配置，None 时使用默认值
+        displacement: 该分析步施加的位移（单侧），None 表示该步不施加位移
         enable_restart: 是否启用重启动功能
         restart_intervals: 重启动间隔数
         set_time_incrementation: 是否设置时间增量控制（仅适用于静态步）
+        field_output: 场输出配置
     """
     step_type: StepType = StepType.STATIC
     config: StepConfigType | None = None
+    displacement: Optional[float] = None
     enable_restart: bool = False
     restart_intervals: int = 1
     set_time_incrementation: bool = False
+    field_output: Optional[FieldOutputConfig] = None
 
 
 # endregion

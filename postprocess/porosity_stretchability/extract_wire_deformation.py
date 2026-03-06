@@ -1,27 +1,8 @@
-import inspect
-import sys
-from pathlib import Path
-
+import numpy as np
 from abaqus import *
 from abaqusConstants import *
-import numpy as np
 
-# 脚本所在目录：noGUI 里 __file__ 一定有；Run Script 时看 ② 退路
-try:  # ① 绝大多数情况下
-    SCRIPT_DIR = Path(__file__).parent.resolve()
-except NameError:  # ② 只有 GUI ▸ Run Script 才会进这里
-    import os
-    fname = inspect.getfile(inspect.currentframe())
-    SCRIPT_DIR = (
-        Path(fname).parent.resolve()
-        if not fname.startswith("<")
-        else Path(os.getcwd()).resolve()
-    )
-
-# 把脚本目录放到 import 搜索路径最前
-sys.path.append(str(SCRIPT_DIR))
-
-from src.utils.post_utils import sort_nodes_along_line
+from abq_serp_sub.utils.post_utils import sort_nodes_along_line
 
 
 def extract_wire_displacement(step=0, frame=None, variable_name='U1'):

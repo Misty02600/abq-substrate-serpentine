@@ -1,7 +1,3 @@
-import os
-import sys
-from pathlib import Path
-import inspect
 from typing import TYPE_CHECKING
 
 from abaqus import *
@@ -10,19 +6,9 @@ from abaqusConstants import *
 if TYPE_CHECKING:
     from abaqus.Model.Model import Model
 
-# 脚本所在目录：noGUI 里 __file__ 一定有；Run Script 时看 ② 退路
-try:                                    # ① 绝大多数情况下
-    SCRIPT_DIR = Path(__file__).parent.resolve()
-except NameError:                       # ② 只有 GUI ▸ Run Script 才会进这里
-    fname = inspect.getfile(inspect.currentframe())
-    SCRIPT_DIR = Path(fname).parent.resolve() if not fname.startswith('<') else Path(os.getcwd()).resolve()
-
-# 把脚本目录放到 import 搜索路径最前
-sys.path.append(str(SCRIPT_DIR))
-
-from src.model.parts.substrate import build_solid_substrate
-from src.model.parts.wire import build_serpentine_wire_no_caps
-from src.utils.abaqus_utils import get_bounding_box
+from abq_serp_sub.processes.parts.substrate import build_solid_substrate
+from abq_serp_sub.processes.parts.wire import build_serpentine_wire_no_caps
+from abq_serp_sub.utils.abaqus_utils import get_bounding_box
 
 
 # region 模型创建
@@ -48,6 +34,7 @@ def create_solid_serpentine_model(
     stabilization_magnitude: float = 0.002,
     adaptive_damping_ratio: float = 0.2,
     use_cohesive: bool = False,
+    sliding: str = "finite",
     global_output: bool = False,
 ):
     """
@@ -74,6 +61,7 @@ def create_solid_serpentine_model(
         stabilization_magnitude (float, optional): 稳定化幅度。默认0.002。
         adaptive_damping_ratio (float, optional): 自适应阻尼比。默认0.2。
         use_cohesive (bool, optional): 是否使用Cohesive接触（否则Tie）。默认False。
+        sliding (str, optional): 接触滑移类型，"finite"（有限滑移）或"small"（小滑移）。默认"finite"。
         global_output (bool, optional): 是否使用全局场输出。默认False。
 
     Returns:
@@ -236,13 +224,16 @@ def create_solid_serpentine_model(
             table=((2000.0, 2000.0, 2000.0),),
         )
 
+        # 根据配置选择滑移类型
+        sliding_type = FINITE if sliding.lower() == "finite" else SMALL
+
         # 显式创建接触对（与 tests/abaqusMacros.py 录制宏一致）
         model.SurfaceToSurfaceContactStd(
             name="Int-1",
             createStepName="Initial",
             main=wire_inst.surfaces["Bottom"],
             secondary=sub_inst.surfaces["TopFace"],
-            sliding=FINITE,
+            sliding=sliding_type,
             thickness=ON,
             interactionProperty="IntProp-1",
             adjustMethod=NONE,

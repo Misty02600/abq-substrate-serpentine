@@ -82,6 +82,9 @@ def _create_hyperelastic_material(model: Model, config: HyperelasticMaterialConf
         超弹性材料配置，必须显式提供。
     """
     material = model.Material(name=config.name)
+    # 如果指定了密度，添加密度属性（动力学分析必需）
+    if config.density is not None:
+        material.Density(table=((config.density,),))
     return material.Hyperelastic(
         materialType=ISOTROPIC,
         testData=OFF,
@@ -111,16 +114,18 @@ def _assign_section_to_part(model: Model, part: Part, material_name: str) -> Non
     return part.SectionAssignment(region=region, sectionName=section_name)
 
 
-def _seed_substrate_part(sub_part: Part, seed_size: float) -> None:
+def _seed_substrate_part(sub_part: Part, seed_size: float, elem_code: str = 'C3D8R') -> None:
     """
-    对基底部件进行布种，包括全局布种和厚度边偏置布种。
+    对基底部件进行布种、设置单元类型并生成网格。
 
     Parameters
     ----------
-    part : Part
+    sub_part : Part
         要布种的部件。
     seed_size : float
         全局布种尺寸。
+    elem_code : str
+        单元类型代码（如 'C3D8R', 'C3D8RH'），默认 'C3D8R'。
     """
     # 全局布种
     sub_part.seedPart(size=seed_size, deviationFactor=0.1, minSizeFactor=0.1)
@@ -134,6 +139,21 @@ def _seed_substrate_part(sub_part: Part, seed_size: float) -> None:
         number=7,
         constraint=FINER,
     )
+
+    # 设置单元类型
+    import mesh as abq_mesh
+    import abaqusConstants as abc
+    elem_type_symbol = getattr(abc, elem_code, C3D8R)
+
+    elem_type1 = abq_mesh.ElemType(
+        elemCode=elem_type_symbol,
+        elemLibrary=STANDARD,
+        kinematicSplit=AVERAGE_STRAIN,
+        hourglassControl=DEFAULT,
+    )
+    cells = sub_part.cells
+    picked_regions = (cells,)
+    sub_part.setElementType(regions=picked_regions, elemTypes=(elem_type1,))
 
     # 生成网格
     sub_part.generateMesh()
@@ -305,7 +325,7 @@ def build_porous_substrate(config: PorousSubstrateConfig):
     _assign_section_to_part(model, part, config.material.name)
 
     # --------------- 布种划分网格 -------------- #
-    _seed_substrate_part(part, substrate_seed_size)
+    _seed_substrate_part(part, substrate_seed_size, config.mesh.elem_code)
 
     return part
 # endregion
@@ -405,7 +425,7 @@ def build_solid_substrate(config: SolidSubstrateConfig):
     # endregion
 
     # region 布种划分网格
-    _seed_substrate_part(part, substrate_seed_size)
+    _seed_substrate_part(part, substrate_seed_size, config.mesh.elem_code)
     # endregion
 
     return part

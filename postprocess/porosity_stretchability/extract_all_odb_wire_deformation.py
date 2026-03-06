@@ -7,27 +7,21 @@
 
 import inspect
 import sys
-from pathlib import Path
 import os
+from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from abaqus import *
 from abaqusConstants import *
 
-# 脚本所在目录：noGUI 里 __file__ 一定有；Run Script 时看 ② 退路
-try:  # ① 绝大多数情况下
-    SCRIPT_DIR = Path(__file__).parent.resolve()
-except NameError:  # ② 只有 GUI ▸ Run Script 才会进这里
-    fname = inspect.getfile(inspect.currentframe())
-    SCRIPT_DIR = (
-        Path(fname).parent.resolve()
-        if not fname.startswith("<")
-        else Path(os.getcwd()).resolve()
-    )
-
-# 把脚本目录放到 import 搜索路径最前
-sys.path.append(str(SCRIPT_DIR))
+# 将脚本目录加入 sys.path（用于导入同目录的兄弟脚本）
+try:
+    _SCRIPT_DIR = Path(__file__).parent.resolve()
+except NameError:
+    _fname = inspect.getfile(inspect.currentframe())
+    _SCRIPT_DIR = Path(_fname).parent.resolve() if not _fname.startswith('<') else Path(os.getcwd()).resolve()
+sys.path.insert(0, str(_SCRIPT_DIR))
 
 # 导入已有的提取函数
 from extract_wire_deformation import extract_wire_displacement

@@ -1,30 +1,19 @@
-import os
-import sys
 import json
 from pathlib import Path
-import inspect
 
 from abaqus import *
 
-# 脚本所在目录：noGUI 里 __file__ 一定有；Run Script 时看 ② 退路
-try:                                    # ① 绝大多数情况下
-    SCRIPT_DIR = Path(__file__).parent.resolve()
-except NameError:                       # ② 只有 GUI ▸ Run Script 才会进这里
-    import os
-    fname = inspect.getfile(inspect.currentframe())
-    SCRIPT_DIR = Path(fname).parent.resolve() if not fname.startswith('<')\
-                 else Path(os.getcwd()).resolve()
-
-# 把脚本目录放到 import 搜索路径最前
-sys.path.append(str(SCRIPT_DIR))
-
-from src.model.assembly import create_porous_model
-from src.utils.common_utils import select_files
+from abq_serp_sub.processes.assembly import create_model_from_dict
+from abq_serp_sub.utils.common_utils import select_files
 
 
 def load_configs_from_json(json_file_path):
     """
     从JSON文件中加载配置
+
+    支持两种格式:
+    1. 单个配置对象: {"substrate": {...}, "wire": {...}, ...}
+    2. 多配置列表: {"metadata": {...}, "configurations": [{...}, {...}]}
 
     Args:
         json_file_path (str): JSON文件路径
@@ -36,17 +25,16 @@ def load_configs_from_json(json_file_path):
         with open(json_file_path, 'r', encoding='utf-8') as f:
             json_data = json.load(f)
 
-        metadata = json_data.get('metadata', {})
-        configurations = json_data.get('configurations', [])
-
-        # 将origin从列表转换为元组（JSON不支持元组，只能存储为列表）
-        for config in configurations:
-            if 'origin' in config and isinstance(config['origin'], list):
-                config['origin'] = tuple(config['origin'])
+        # 检测格式：如果有 'configurations' 键，使用旧格式
+        if 'configurations' in json_data:
+            metadata = json_data.get('metadata', {})
+            configurations = json_data.get('configurations', [])
+        else:
+            # 新格式：单个配置对象
+            metadata = {'source': Path(json_file_path).name}
+            configurations = [json_data]
 
         print(f"成功加载JSON文件: {Path(json_file_path).name}")
-        print(f"文件ID: {metadata.get('id', 'N/A')}")
-        print(f"创建日期: {metadata.get('created_date', 'N/A')}")
         print(f"配置数量: {len(configurations)}")
 
         return metadata, configurations
@@ -62,34 +50,30 @@ def load_configs_from_json(json_file_path):
         return None, []
 
 
-def generate_models_from_json(json_file_path, max_models=None):
+def generate_models_from_json(json_file_path):
     """
-    从JSON文件中的配置生成模型
+    从JSON文件中的配置生成模型。
+    每个配置独立处理，单个配置失败不会中断其余配置的创建。
 
     Args:
         json_file_path (str): JSON配置文件路径
-        max_models (int, optional): 最大模型数量限制
 
     Returns:
-        dict: 创建结果统计
+        dict: 创建结果统计 {'total': int, 'created': int, 'failed': list}
     """
     # 加载配置
     metadata, configurations = load_configs_from_json(json_file_path)
 
     if not configurations:
         print("没有找到有效的配置，退出")
-        return {'total': 0, 'created': 0}
+        return {'total': 0, 'created': 0, 'failed': []}
 
     total_configs = len(configurations)
     print(f"发现 {total_configs} 个配置")
 
-    # 检查是否超过限制
-    if max_models and total_configs > max_models:
-        print(f"错误: 配置包含 {total_configs} 个模型，超过限制 {max_models}，操作终止")
-        return {'total': total_configs, 'created': 0}
-
     # 统计变量
     created_count = 0
+    failed_list = []  # 记录失败的配置 (索引, 名称, 错误信息)
 
     print(f"开始创建模型...")
 
@@ -98,26 +82,37 @@ def generate_models_from_json(json_file_path, max_models=None):
 
         print(f"[{i}/{total_configs}] 创建: {model_name}")
 
-        # 创建模型
-        create_porous_model(**config_params)
-        created_count += 1
+        try:
+            create_model_from_dict(config_params)
+            created_count += 1
+        except Exception as e:
+            error_msg = str(e)
+            failed_list.append((i, model_name, error_msg))
+            print(f"  ✗ 创建失败: {error_msg}")
+            print(f"  跳过此配置，继续处理下一个...")
 
-    # 打印结果统计
-    print(f"\n创建完成: {created_count}/{total_configs}")
+    # 打印结果总结
+    print(f"\n{'='*50}")
+    print(f"创建完成: 成功 {created_count}/{total_configs}")
+    if failed_list:
+        print(f"失败 {len(failed_list)} 个:")
+        for idx, name, err in failed_list:
+            print(f"  [{idx}] {name}: {err}")
+    print(f"{'='*50}")
 
     return {
         'total': total_configs,
-        'created': created_count
+        'created': created_count,
+        'failed': failed_list,
     }
 
 
-def generate_models_from_multiple_json(json_files, max_models=None):
+def generate_models_from_multiple_json(json_files):
     """
     从多个JSON文件中的配置生成模型
 
     Args:
         json_files (list): JSON文件路径列表
-        max_models (int, optional): 最大模型数量限制
 
     Returns:
         dict: 创建结果统计
@@ -126,34 +121,36 @@ def generate_models_from_multiple_json(json_files, max_models=None):
 
     total_created = 0
     total_configs = 0
+    all_failed = []
 
     for i, json_file in enumerate(json_files, 1):
         print(f"\n[{i}/{len(json_files)}] 处理文件: {Path(json_file).name}")
 
-        result = generate_models_from_json(json_file, max_models=max_models)
+        result = generate_models_from_json(json_file)
 
         total_created += result['created']
         total_configs += result['total']
+        all_failed.extend(result['failed'])
 
-        # 如果有最大限制且已达到，停止处理后续文件
-        if max_models and total_created >= max_models:
-            print(f"已达到最大模型数量限制 {max_models}，停止处理后续文件")
-            break
-
-    print(f"\n多文件处理完成: 总配置 {total_configs}, 成功创建 {total_created}")
+    # 最终总结
+    print(f"\n{'='*50}")
+    print(f"多文件处理完成: 总配置 {total_configs}, 成功创建 {total_created}")
+    if all_failed:
+        print(f"共 {len(all_failed)} 个配置创建失败:")
+        for idx, name, err in all_failed:
+            print(f"  [{idx}] {name}: {err}")
+    print(f"{'='*50}")
 
     return {
         'total': total_configs,
-        'created': total_created
+        'created': total_created,
+        'failed': all_failed,
     }
 
 
-def generate_models_from_json_interactive(max_models=None):
+def generate_models_from_json_interactive():
     """
     交互式从JSON文件生成模型（会打开文件选择对话框，支持多选）
-
-    Args:
-        max_models (int, optional): 最大模型数量限制
     """
     print("从JSON配置文件生成模型")
     print("请选择JSON配置文件（可多选）...")
@@ -173,7 +170,7 @@ def generate_models_from_json_interactive(max_models=None):
         return
 
     # 处理多个文件
-    result = generate_models_from_multiple_json(json_files, max_models=max_models)
+    result = generate_models_from_multiple_json(json_files)
 
     if result['created'] > 0:
         print(f"\n总共成功创建 {result['created']} 个模型")
@@ -186,7 +183,7 @@ if __name__ == "__main__":
 
     # 可以直接指定JSON文件路径
     # json_file_path = "configs_20241227_123456.json"
-    # result = generate_models_from_json(json_file_path, max_models=10)
+    # result = generate_models_from_json(json_file_path)
 
     # 或者使用交互式选择
-    generate_models_from_json_interactive(max_models=300)
+    generate_models_from_json_interactive()

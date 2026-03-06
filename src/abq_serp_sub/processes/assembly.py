@@ -63,32 +63,18 @@ from abq_serp_sub.core.context import (
     AnalysisStepConfig,
     # 模型配置
     ModelConfig,
-    LoadingConfig,
     ComputingConfig,
+    MasterSurface,
+    SlidingType,
     InteractionConfig,
-    OutputConfig,
 )
 
 # 分析步创建函数
-from abq_serp_sub.processes.steps import (
-    create_step,
-    create_implicit_dynamics_step,
-    create_explicit_dynamics_step,
-    create_dynamics_step,
-    reset_all_step_counters,
-    create_stretch_config,
-    create_analysis_steps,
-    create_steps_from_configs,
-    setup_field_outputs,
-)
-
+from abq_serp_sub.processes.steps import create_steps_from_configs
 
 # 配置构建函数从 preprocess.builders 导入
-from abq_serp_sub.preprocess.builders import (
-    build_substrate_config,
-    build_wire_config,
-    build_model_config,
-)
+from abq_serp_sub.preprocess.builders import build_model_config
+
 
 
 # region 创建蛇形导线-基底模型
@@ -106,14 +92,14 @@ def create_model(config: ModelConfig) -> "Model":
     modelname = config.modelname
     substrate_config = config.substrate_config
     wire_config = config.wire_config
-    loading = config.loading
     computing = config.computing
     interaction = config.interaction
-    output = config.output
     steps = config.steps
 
     # region 初始化和模型创建
     print(f"正在创建模型: {modelname}")
+    if modelname in mdb.models:
+        print(f"  ⚠ 警告: 模型 '{modelname}' 已存在，将被覆盖")
     model = mdb.Model(name=modelname)
     # endregion
 
@@ -145,17 +131,8 @@ def create_model(config: ModelConfig) -> "Model":
     asm.translate(instanceList=('Wire-1',), vector=offset)
     print(f"Wire 已居中于基底，偏移: {offset}")
 
-    # 垂直翻转（沿 X 轴旋转 180°）
-    if wire_config.geom.flip_vertical:
-        wire_bbox = get_bounding_box(wire_inst)
-        wire_center = tuple((low + high) / 2 for low, high in zip(wire_bbox['low'], wire_bbox['high']))
-        asm.rotate(
-            instanceList=('Wire-1',),
-            axisPoint=wire_center,
-            axisDirection=(1.0, 0.0, 0.0),  # 绕 X 轴
-            angle=180.0
-        )
-        print("Wire 已沿水平轴翻转")
+    # 注意：flip_vertical 已在 wire.py 草图阶段通过 Y 坐标翻转实现
+    # 这样可以保持 Top/Bottom 集合的语义正确性，无需在 assembly 阶段旋转
 
     # 旋转 Wire 实例（居中后再旋转）
     rotation_angle = wire_config.geom.rotation_angle
@@ -168,9 +145,10 @@ def create_model(config: ModelConfig) -> "Model":
         rc = wire_config.geom.rotation_center
         match rc:
             case RotationCenter.ORIGIN:
-                # ORIGIN 现在指居中后的导线中心
-                axis_point = wire_center
+                # 绕装配坐标系原点旋转
+                axis_point = (0.0, 0.0, 0.0)
             case RotationCenter.PART_CENTER:
+                # 绕导线几何中心旋转
                 axis_point = wire_center
             case (x, y, z):
                 axis_point = (x, y, z)
@@ -202,38 +180,65 @@ def create_model(config: ModelConfig) -> "Model":
 
     # region 分析步&场输出
     if steps:
-        # 使用配置列表创建分析步
+        # 使用配置列表创建分析步（场输出在其中处理）
         create_steps_from_configs(model=model, step_configs=steps)
-    else:
-        # 向后兼容：使用默认两步配置
-        create_analysis_steps(
-            model=model,
-            u1=loading.u1,
-            u2=loading.u2,
-            enable_restart=computing.enable_restart,
-        )
-
-    setup_field_outputs(
-        model=model,
-        modelname=modelname,
-        global_output=output.global_output,
-    )
     # endregion
 
     # region 相互作用
-    if interaction.use_cohesive:
-        mdb.models[modelname].ContactProperty('IntProp-1')
-        mdb.models[modelname].interactionProperties['IntProp-1'].CohesiveBehavior()
-        mdb.models[modelname].ContactStd(name='Int-1', createStepName='Initial')
-        mdb.models[modelname].interactions['Int-1'].includedPairs.setValuesInStep(
-            stepName='Initial', useAllstar=ON)
-        mdb.models[modelname].interactions['Int-1'].contactPropertyAssignments.appendInStep(
-            stepName='Initial', assignments=((GLOBAL, SELF, 'IntProp-1'), ))
+    # 确定主从面
+    if interaction.master_surface == MasterSurface.SUBSTRATE_TOP:
+        main_surface = sub_inst.surfaces["TopFace"]
+        secondary_surface = wire_inst.surfaces["Bottom"]
     else:
+        main_surface = wire_inst.surfaces["Bottom"]
+        secondary_surface = sub_inst.surfaces["TopFace"]
+
+    if interaction.use_cohesive:
+        # Cohesive 接触
+        coh = interaction.cohesive
+        mdb.models[modelname].ContactProperty('IntProp-1')
+
+        if coh is not None:
+            # 设置 Cohesive 行为参数
+            mdb.models[modelname].interactionProperties['IntProp-1'].CohesiveBehavior(
+                defaultPenalties=OFF,
+                table=((coh.stiffness_normal, coh.stiffness_shear_1, coh.stiffness_shear_2),)
+            )
+            # 损伤起始准则 - 最大应力 + 能量演化 + 粘性稳定
+            mdb.models[modelname].interactionProperties['IntProp-1'].Damage(
+                initTable=((coh.max_stress_normal, coh.max_stress_shear_1, coh.max_stress_shear_2),),
+                useEvolution=ON,
+                evolutionType=ENERGY,
+                evolTable=((coh.fracture_energy,),),
+                useStabilization=ON,
+                viscosityCoef=coh.viscosity_coef,
+            )
+        else:
+            mdb.models[modelname].interactionProperties['IntProp-1'].CohesiveBehavior()
+
+        # 根据配置选择滑移类型
+        sliding_type = FINITE if interaction.sliding == SlidingType.FINITE else SMALL
+
+        # Surface-to-Surface 接触（替代通用接触）
+        mdb.models[modelname].SurfaceToSurfaceContactStd(
+            name='Int-1',
+            createStepName='Initial',
+            main=main_surface,
+            secondary=secondary_surface,
+            sliding=sliding_type,
+            thickness=ON,
+            interactionProperty='IntProp-1',
+            adjustMethod=NONE,
+            initialClearance=OMIT,
+            datumAxis=None,
+            clearanceRegion=None,
+        )
+    else:
+        # Tie 约束
         mdb.models[modelname].Tie(
             name="Constraint-1",
-            main=sub_inst.surfaces["TopFace"],
-            secondary=wire_inst.surfaces["Bottom"],
+            main=main_surface,
+            secondary=secondary_surface,
             positionToleranceMethod=COMPUTED,
             adjust=ON,
             tieRotations=ON,
@@ -262,6 +267,18 @@ def create_model(config: ModelConfig) -> "Model":
         fieldName="", localCsys=None,
     )
 
+    # 可选：约束基底底面 z 方向位移
+    if config.fix_substrate_bottom_z:
+        mdb.models[modelname].DisplacementBC(
+            name="BottomFace-Z",
+            createStepName="Initial",
+            region=sub_inst.sets["BottomFace"],
+            u1=UNSET, u2=UNSET, u3=SET,
+            ur1=UNSET, ur2=UNSET, ur3=UNSET,
+            amplitude=UNSET, distributionType=UNIFORM,
+            fieldName="", localCsys=None,
+        )
+
     mdb.models[modelname].DisplacementBC(
         name="left-U",
         createStepName="Initial",
@@ -270,12 +287,6 @@ def create_model(config: ModelConfig) -> "Model":
         ur1=UNSET, ur2=UNSET, ur3=UNSET,
         amplitude=UNSET, distributionType=UNIFORM,
         fieldName="", localCsys=None,
-    )
-    mdb.models[modelname].boundaryConditions["left-U"].setValuesInStep(
-        stepName="Step-1", u1=-loading.u1
-    )
-    mdb.models[modelname].boundaryConditions["left-U"].setValuesInStep(
-        stepName="Step-2", u1=-loading.u2
     )
 
     mdb.models[modelname].DisplacementBC(
@@ -287,12 +298,18 @@ def create_model(config: ModelConfig) -> "Model":
         amplitude=UNSET, distributionType=UNIFORM,
         fieldName="", localCsys=None,
     )
-    mdb.models[modelname].boundaryConditions["right-U"].setValuesInStep(
-        stepName="Step-1", u1=loading.u1
-    )
-    mdb.models[modelname].boundaryConditions["right-U"].setValuesInStep(
-        stepName="Step-2", u1=loading.u2
-    )
+
+    # 根据每个分析步的 displacement 设置边界条件
+    for i, step_cfg in enumerate(steps, start=1):
+        disp = step_cfg.displacement
+        if disp is not None:
+            step_name = f"Step-{i}"
+            mdb.models[modelname].boundaryConditions["left-U"].setValuesInStep(
+                stepName=step_name, u1=-disp
+            )
+            mdb.models[modelname].boundaryConditions["right-U"].setValuesInStep(
+                stepName=step_name, u1=disp
+            )
     # endregion
 
     # region 作业创建
@@ -403,10 +420,8 @@ if __name__ == "__main__":
             ),
             mesh=WireMeshConfig(seed_size=0.05),
         ),
-        loading=LoadingConfig(u1=0.1, u2=0.5),
         computing=ComputingConfig(num_cpus=4, enable_restart=False),
         interaction=InteractionConfig(use_cohesive=False),
-        output=OutputConfig(global_output=False),
         # 分析步配置
         steps=(
             # Step-1: 预加载步
@@ -418,6 +433,7 @@ if __name__ == "__main__":
                     min_inc=1e-08,
                     max_inc=0.5,
                 ),
+                displacement=0.1,
                 enable_restart=False,
                 restart_intervals=1,
                 set_time_incrementation=True,
@@ -431,6 +447,7 @@ if __name__ == "__main__":
                     min_inc=1e-08,
                     max_inc=0.05,
                 ),
+                displacement=0.5,
                 enable_restart=False,
                 restart_intervals=2,
                 set_time_incrementation=False,

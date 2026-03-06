@@ -8,13 +8,10 @@ from pydantic import ValidationError
 
 from abq_serp_sub.preprocess.config.models import (
     SubstrateConfig,
-    LoadingConfig,
     WireConfig,
     PoresConfig,
     ComputingConfig,
-    AnalysisConfig,
     InteractionConfig,
-    OutputConfig,
     NamingConfig,
     Config,
     StepTypeEnum,
@@ -22,7 +19,6 @@ from abq_serp_sub.preprocess.config.models import (
     AmplitudeTypeEnum,
     ImplicitDynamicsConfig,
     ExplicitDynamicsConfig,
-    DynamicsAnalysisConfig,
 )
 
 
@@ -250,35 +246,6 @@ class TestExplicitDynamicsConfig:
         assert config.time_period == 1.0
         assert config.scale_factor == 0.9
 
-
-class TestDynamicsAnalysisConfig:
-    """动力学分析整合配置测试"""
-
-    def test_static_config(self):
-        """测试静态分析配置"""
-        config = DynamicsAnalysisConfig(
-            step_type=StepTypeEnum.STATIC,
-            static=AnalysisConfig(
-                stabilization_magnitude=0.002,
-                adaptive_damping_ratio=0.2,
-            ),
-        )
-        assert config.step_type == StepTypeEnum.STATIC
-        assert config.static is not None
-
-    def test_implicit_config(self):
-        """测试隐式动力学配置"""
-        config = DynamicsAnalysisConfig(
-            step_type=StepTypeEnum.IMPLICIT_DYNAMICS,
-            implicit=ImplicitDynamicsConfig(
-                max_num_inc=5000,
-                initial_inc=0.01,
-            ),
-        )
-        assert config.step_type == StepTypeEnum.IMPLICIT_DYNAMICS
-        assert config.implicit is not None
-
-
 # endregion
 
 
@@ -299,7 +266,6 @@ class TestConfig:
                 edge_seed_size=0.02,
                 square_size=0.5,
             ),
-            loading=LoadingConfig(u1=0.1, u2=0.5),
             wire=WireConfig(
                 w=0.5,
                 l_1=6.0,
@@ -334,7 +300,6 @@ class TestConfig:
                 edge_seed_size=0.02,
                 square_size=0.5,
             ),
-            loading=LoadingConfig(u1=0.1, u2=0.5),
             wire=WireConfig(
                 w=0.5,
                 l_1=6.0,

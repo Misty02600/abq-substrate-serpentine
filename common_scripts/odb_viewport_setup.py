@@ -1,25 +1,8 @@
 import inspect
 from abaqus import *
 from abaqusConstants import *
-import sys
-from pathlib import Path
 
-# 添加父目录到路径
-# 脚本所在目录：noGUI 里 __file__ 一定有；Run Script 时看 ② 退路
-try:                                    # ① 绝大多数情况下
-    SCRIPT_DIR = Path(__file__).parent.resolve()
-except NameError:                       # ② 只有 GUI ▸ Run Script 才会进这里
-    import os
-    fname = inspect.getfile(inspect.currentframe())
-    SCRIPT_DIR = Path(fname).parent.resolve() if not fname.startswith('<')\
-                 else Path(os.getcwd()).resolve()
-
-# 将父目录添加到Python路径
-PARENT_DIR = SCRIPT_DIR.parent
-if str(PARENT_DIR) not in sys.path:
-    sys.path.insert(0, str(PARENT_DIR))
-
-from src.utils.abaqus_utils import current_display_info
+from abq_serp_sub.utils.abaqus_utils import current_display_info
 
 
 def set_visible_edges_free():

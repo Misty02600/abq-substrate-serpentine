@@ -7,6 +7,7 @@ from abaqusConstants import (
     DISSIPATED_ENERGY_FRACTION,
     QUASI_STATIC, MODERATE_DISSIPATION, TRANSIENT_FIDELITY,
     AUTOMATIC_GLOBAL, AUTOMATIC_EBE, FIXED_USER_DEFINED_INC, FIXED_EBE,
+    INTEGRATION_POINTS, NODAL, ELEMENT_CENTROID,
 )
 
 if TYPE_CHECKING:
@@ -22,6 +23,8 @@ from abq_serp_sub.core.context import (
     StepIncrementConfig,
     ImplicitDynamicsStepConfig,
     ExplicitDynamicsStepConfig,
+    # 场输出配置
+    FieldOutputConfig,
     # 分析步配置 - 序列配置
     AnalysisStepConfig,
     # 分析步配置 - 默认配置
@@ -82,10 +85,10 @@ def create_step(
         initialInc=config.initial_inc,
         minInc=config.min_inc,
         maxInc=config.max_inc,
-        stabilizationMagnitude=0.002,
+        stabilizationMagnitude=config.stabilization_magnitude,
         stabilizationMethod=DISSIPATED_ENERGY_FRACTION,
         continueDampingFactors=False,
-        adaptiveDampingRatio=0.2,
+        adaptiveDampingRatio=config.adaptive_damping_ratio,
     )
 
     if enable_restart:
@@ -440,47 +443,6 @@ def create_analysis_steps(
 # endregion
 
 
-# region 场输出设置
-def setup_field_outputs(
-    model: "Model",
-    modelname: str,
-    global_output: bool = False,
-):
-    """
-    设置场输出请求。
-
-    Args:
-        model: Abaqus 模型对象
-        modelname (str): 模型名称
-        global_output (bool): 是否使用全局输出，默认 False
-    """
-    if global_output:
-        # 使用全局输出
-        model.fieldOutputRequests["F-Output-1"].setValues(
-            variables=("U", "RF", "LE", "CSTRESS", "CFORCE"),
-            sectionPoints=(1, 2, 3, 4, 5, 6, 7, 8, 9),
-        )
-    else:
-        # 使用分别的场输出
-        _regionDef = model.rootAssembly.allInstances["Substrate-1"].sets["TPC_A"]
-        model.FieldOutputRequest(
-            name="F-Output-1",
-            createStepName="Step-2",
-            variables=("U",),
-            frequency=1,
-            region=_regionDef,
-        )
-
-        _regionDef = model.rootAssembly.allInstances["Wire-1"].sets["All"]
-        model.FieldOutputRequest(
-            name="F-Output-2",
-            createStepName="Step-2",
-            variables=("LE", "U", "CSTRESS", "CFORCE"),
-            frequency=1,
-            region=_regionDef,
-            sectionPoints=(1, 2, 3, 4, 5, 6, 7, 8, 9),
-        )
-# endregion
 
 
 # region 根据配置列表创建分析步
@@ -510,7 +472,15 @@ def create_steps_from_configs(
     # 重置所有计数器，确保从 Step-1 开始
     reset_all_step_counters()
 
+    # 场输出位置映射
+    position_map = {
+        "INTEGRATION_POINTS": INTEGRATION_POINTS,
+        "NODAL": NODAL,
+        "ELEMENT_CENTROID": ELEMENT_CENTROID,
+    }
+
     created_steps = []
+    step_index = 1
 
     for step_config in step_configs:
         step_type = step_config.step_type
@@ -518,6 +488,7 @@ def create_steps_from_configs(
         enable_restart = step_config.enable_restart
         restart_intervals = step_config.restart_intervals
         set_time_incrementation = step_config.set_time_incrementation
+        field_output = step_config.field_output
 
         if step_type == StepType.STATIC:
             step = create_step(
@@ -542,7 +513,22 @@ def create_steps_from_configs(
         else:
             raise ValueError(f"不支持的分析步类型: {step_type}")
 
+        # 创建场输出
+        if field_output is not None:
+            step_name = f"Step-{step_index}"
+            fo_name = f"F-Output-{step_index}"
+            position = position_map.get(field_output.position, INTEGRATION_POINTS)
+
+            model.FieldOutputRequest(
+                name=fo_name,
+                createStepName=step_name,
+                variables=field_output.variables,
+                frequency=field_output.frequency,
+                position=position,
+            )
+
         created_steps.append(step)
+        step_index += 1
 
     return created_steps
 # endregion

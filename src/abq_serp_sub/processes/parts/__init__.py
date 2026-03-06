@@ -44,7 +44,7 @@ __all__ = [
     "build_serpentine_wire",
     "build_serpentine_wire_no_caps",
     # material_instances
-    "pdms",
-    "pi",
-    "cu",
+    "PDMS",
+    "PI",
+    "CU",
 ]

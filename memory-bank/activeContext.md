@@ -9,7 +9,7 @@
     - `LoadingConfig` - 加载条件配置
     - `ComputingConfig` - 计算资源配置
     - `InteractionConfig` - 相互作用配置
-    - `OutputConfig` - 输出配置
+    - ~~`OutputConfig`~~ - 已清理（2026-03-03）
     - `ModelConfig` - 完整模型配置（聚合所有子配置）
   - **新增构建函数**（`core/builders.py`）：
     - `build_substrate_config(cfg)` - 从 dict 构建基底配置
@@ -68,8 +68,7 @@ ModelConfig
 │   └── mesh: WireMeshConfig
 ├── loading: LoadingConfig (u1, u2)
 ├── computing: ComputingConfig (num_cpus, enable_restart)
-├── interaction: InteractionConfig (use_cohesive)
-└── output: OutputConfig (global_output)
+└── interaction: InteractionConfig (use_cohesive)
 ```
 
 ### 添加新配置字段的流程

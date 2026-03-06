@@ -7,36 +7,50 @@ name = "abq-serpentine-substrate"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "hydra-core" },
-    { name = "hydra-list-sweeper" },
-    { name = "numpy" },
-    { name = "omegaconf" },
     { name = "pandas" },
-    { name = "pydantic" },
-    { name = "scipy" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "abqpy" },
+    { name = "hydra-core" },
+    { name = "hydra-list-sweeper" },
+    { name = "numpy" },
+    { name = "omegaconf" },
+    { name = "pydantic" },
     { name = "pytest" },
+    { name = "scipy" },
+]
+local = [
+    { name = "hydra-core" },
+    { name = "hydra-list-sweeper" },
+    { name = "numpy" },
+    { name = "omegaconf" },
+    { name = "pydantic" },
+    { name = "scipy" },
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "hydra-core", specifier = "==1.3.2" },
-    { name = "hydra-list-sweeper", specifier = "==1.1.0" },
-    { name = "numpy", specifier = "==1.26.4" },
-    { name = "omegaconf", specifier = "==2.3.0" },
-    { name = "pandas", specifier = "==2.3.3" },
-    { name = "pydantic", specifier = "==2.12.5" },
-    { name = "scipy", specifier = "==1.15.3" },
-]
+requires-dist = [{ name = "pandas", specifier = "==2.3.3" }]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "abqpy", specifier = ">=2024.9,<2025.0" },
+    { name = "hydra-core", specifier = "==1.3.2" },
+    { name = "hydra-list-sweeper", specifier = "==1.1.0" },
+    { name = "numpy", specifier = "==1.26.4" },
+    { name = "omegaconf", specifier = "==2.3.0" },
+    { name = "pydantic", specifier = "==2.12.5" },
     { name = "pytest", specifier = ">=8.0.0" },
+    { name = "scipy", specifier = "==1.15.3" },
+]
+local = [
+    { name = "hydra-core", specifier = "==1.3.2" },
+    { name = "hydra-list-sweeper", specifier = "==1.1.0" },
+    { name = "numpy", specifier = "==1.26.4" },
+    { name = "omegaconf", specifier = "==2.3.0" },
+    { name = "pydantic", specifier = "==2.12.5" },
+    { name = "scipy", specifier = "==1.15.3" },
 ]
 
 [[package]]

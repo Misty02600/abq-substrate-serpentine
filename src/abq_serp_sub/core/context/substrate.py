@@ -56,9 +56,11 @@ class SubstrateMeshConfig:
     Attributes:
         seed_size: 基底布种尺寸
         edge_seed_size: 边缘细化布种尺寸
+        elem_code: 单元类型代码（如 'C3D8R', 'C3D8RH'），默认 'C3D8R'
     """
     seed_size: float
     edge_seed_size: float
+    elem_code: str = 'C3D8R'
 
 
 @dataclass(frozen=True)

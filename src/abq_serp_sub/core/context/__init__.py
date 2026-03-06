@@ -17,6 +17,7 @@ core/context 子包
 # 材料配置
 from abq_serp_sub.core.context.material import (
     HyperelasticMaterialConfig,
+    YeohMaterialConfig,
     ElasticMaterialConfig,
 )
 
@@ -51,6 +52,8 @@ from abq_serp_sub.core.context.step import (
     StaticStepConfig,
     ImplicitDynamicsStepConfig,
     ExplicitDynamicsStepConfig,
+    # 场输出配置
+    FieldOutputConfig,
     # 分析步序列配置
     StepConfigType,
     AnalysisStepConfig,
@@ -62,16 +65,18 @@ from abq_serp_sub.core.context.step import (
 
 # 模型配置
 from abq_serp_sub.core.context.model import (
-    LoadingConfig,
     ComputingConfig,
+    MasterSurface,
+    SlidingType,
+    CohesiveConfig,
     InteractionConfig,
-    OutputConfig,
     ModelConfig,
 )
 
 __all__ = [
     # 材料
     "HyperelasticMaterialConfig",
+    "YeohMaterialConfig",
     "ElasticMaterialConfig",
     # 基底
     "SolidSubstrateGeomConfig",
@@ -96,6 +101,8 @@ __all__ = [
     "StaticStepConfig",
     "ImplicitDynamicsStepConfig",
     "ExplicitDynamicsStepConfig",
+    # 场输出配置
+    "FieldOutputConfig",
     # 分析步 - 序列配置
     "StepConfigType",
     "AnalysisStepConfig",
@@ -104,9 +111,10 @@ __all__ = [
     "get_default_implicit_dynamics_config",
     "get_default_explicit_dynamics_config",
     # 模型配置
-    "LoadingConfig",
     "ComputingConfig",
+    "MasterSurface",
+    "SlidingType",
+    "CohesiveConfig",
     "InteractionConfig",
-    "OutputConfig",
     "ModelConfig",
 ]

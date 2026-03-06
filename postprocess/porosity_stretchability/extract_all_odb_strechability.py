@@ -9,12 +9,13 @@ from tkinter import filedialog
 import pandas as pd
 from abaqus import session
 
+# 将脚本目录加入 sys.path（用于导入同目录的兄弟脚本）
 try:
-    SCRIPT_DIR = Path(__file__).parent.resolve()
+    _SCRIPT_DIR = Path(__file__).parent.resolve()
 except NameError:
-    fname = inspect.getfile(inspect.currentframe())
-    SCRIPT_DIR = Path(fname).parent.resolve() if not fname.startswith('<') else Path(os.getcwd()).resolve()
-sys.path.append(str(SCRIPT_DIR))
+    _fname = inspect.getfile(inspect.currentframe())
+    _SCRIPT_DIR = Path(_fname).parent.resolve() if not _fname.startswith('<') else Path(os.getcwd()).resolve()
+sys.path.insert(0, str(_SCRIPT_DIR))
 
 from extract_strechability import get_overall_critical_summary
 

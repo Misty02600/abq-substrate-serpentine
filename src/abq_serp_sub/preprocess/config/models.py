@@ -26,6 +26,12 @@ PARAM_ABBREV: dict[str, str] = {
     "depth": "d",
     "seed_size": "sub",
     "edge_seed_size": "edge",
+    # Cohesive 参数
+    "interaction.cohesive.max_stress_normal": "sig",
+    "interaction.cohesive.stiffness_normal": "K",
+    "interaction.cohesive.fracture_energy": "Gc",
+    # 分析步参数
+    "steps.0.step_type": "stype",
 }
 
 
@@ -36,6 +42,15 @@ class SubstrateTypeEnum(str, Enum):
     """基底类型枚举"""
     SOLID = "solid"
     POROUS = "porous"
+
+
+class SubstrateMaterialConfig(BaseModel):
+    """基底材料配置 (Hyperelastic - Mooney-Rivlin)"""
+    name: str = Field(default="PDMS", description="材料名称")
+    density: Optional[float] = Field(default=9.7e-10, gt=0, description="密度 (tonne/mm³)，PDMS默认~970 kg/m³")
+    c1: float = Field(default=0.27027, description="Mooney-Rivlin C1 参数")
+    c2: float = Field(default=0.067568, description="Mooney-Rivlin C2 参数")
+    d: float = Field(default=0.12, description="体积压缩性 D 参数")
 
 
 class SubstrateConfig(BaseModel):
@@ -72,6 +87,15 @@ class SubstrateConfig(BaseModel):
     depth: float = Field(gt=0, description="基底厚度")
     seed_size: float = Field(gt=0, description="基底布种尺寸")
     edge_seed_size: float = Field(gt=0, description="边缘布种尺寸")
+    elem_code: str = Field(
+        default="C3D8R",
+        description="单元类型代码，如 C3D8R, C3D8RH 等",
+    )
+
+    # 材料配置（可选，默认使用 PDMS）
+    material: Optional[SubstrateMaterialConfig] = Field(
+        default=None, description="材料参数，留空使用 PDMS 默认值"
+    )
 
     @model_validator(mode="after")
     def validate_type_specific_fields(self) -> "SubstrateConfig":
@@ -82,7 +106,7 @@ class SubstrateConfig(BaseModel):
         elif self.type == SubstrateTypeEnum.POROUS:
             if any(v is None for v in [self.n_rows, self.n_cols, self.porosity, self.square_size]):
                 raise ValueError("多孔基底必须指定 n_rows, n_cols, porosity, square_size")
-            if self.porosity > 0.7854:
+            if self.porosity is not None and self.porosity > 0.7854:
                 raise ValueError(f"porosity {self.porosity} 超过理论最大值 π/4 ≈ 0.7854")
         return self
 
@@ -90,17 +114,7 @@ class SubstrateConfig(BaseModel):
 # endregion
 
 
-# region 加载配置
 
-
-class LoadingConfig(BaseModel):
-    """加载条件配置"""
-
-    u1: float = Field(description="第一步位移（单侧）")
-    u2: float = Field(description="第二步位移（单侧）")
-
-
-# endregion
 
 
 # region 导线配置
@@ -109,6 +123,7 @@ class LoadingConfig(BaseModel):
 class WireConfig(BaseModel):
     """蛇形导线配置"""
 
+    # 几何参数
     w: float = Field(gt=0, description="导线宽度")
     l_1: float = Field(gt=0, description="水平节距（一个完整周期宽度）")
     l_2: float = Field(gt=0, description="竖直直线段长度")
@@ -121,6 +136,34 @@ class WireConfig(BaseModel):
     )
     has_end_caps: bool = Field(default=True, description="是否有端点圆盘")
     flip_vertical: bool = Field(default=False, description="是否沿水平轴（X轴）翻转")
+
+    @field_validator("rotation_center")
+    @classmethod
+    def _validate_rotation_center(cls, v):
+        if isinstance(v, list):
+            if len(v) != 3:
+                raise ValueError(
+                    f"rotation_center 坐标列表必须包含恰好 3 个元素 [x, y, z]，"
+                    f"当前长度为 {len(v)}"
+                )
+        elif isinstance(v, str) and v not in ("origin", "center"):
+            raise ValueError(
+                f"rotation_center 字符串仅支持 'origin' 或 'center'，"
+                f"当前值为 '{v}'"
+            )
+        return v
+
+    # 材料参数 - PI 层
+    pi_thickness: float = Field(gt=0, default=0.004, description="PI层厚度 (mm)")
+    pi_E: Optional[float] = Field(default=None, gt=0, description="PI弹性模量 (MPa)")
+    pi_nu: Optional[float] = Field(default=None, gt=0, lt=0.5, description="PI泊松比")
+    pi_density: Optional[float] = Field(default=1.42e-9, gt=0, description="PI密度 (tonne/mm³)，默认~1420 kg/m³")
+
+    # 材料参数 - Cu 层
+    cu_thickness: float = Field(gt=0, default=0.0003, description="Cu层厚度 (mm)")
+    cu_E: Optional[float] = Field(default=None, gt=0, description="Cu弹性模量 (MPa)")
+    cu_nu: Optional[float] = Field(default=None, gt=0, lt=0.5, description="Cu泊松比")
+    cu_density: Optional[float] = Field(default=8.96e-9, gt=0, description="Cu密度 (tonne/mm³)，默认~8960 kg/m³")
 
 
 # endregion
@@ -187,17 +230,6 @@ class TimeIncrementationMethodEnum(str, Enum):
     FIXED_EBE = "FIXED_EBE"
 
 
-class AnalysisConfig(BaseModel):
-    """分析步配置（静态步参数）"""
-
-    stabilization_magnitude: float = Field(
-        gt=0, default=0.002, description="稳定化幅度"
-    )
-    adaptive_damping_ratio: float = Field(
-        gt=0, default=0.2, description="自适应阻尼比"
-    )
-
-
 class ImplicitDynamicsConfig(BaseModel):
     """隐式动力学分析步配置"""
 
@@ -256,30 +288,6 @@ class ExplicitDynamicsConfig(BaseModel):
     )
 
 
-class DynamicsAnalysisConfig(BaseModel):
-    """动力学分析配置（整合静态、隐式、显式）"""
-
-    step_type: StepTypeEnum = Field(
-        default=StepTypeEnum.STATIC,
-        description="分析步类型"
-    )
-    # 静态分析配置
-    static: Optional[AnalysisConfig] = Field(
-        default=None,
-        description="静态分析步配置（当 step_type=static 时使用）"
-    )
-    # 隐式动力学配置
-    implicit: Optional[ImplicitDynamicsConfig] = Field(
-        default=None,
-        description="隐式动力学配置（当 step_type=implicit 时使用）"
-    )
-    # 显式动力学配置
-    explicit: Optional[ExplicitDynamicsConfig] = Field(
-        default=None,
-        description="显式动力学配置（当 step_type=explicit 时使用）"
-    )
-
-
 class StaticStepConfig(BaseModel):
     """静态分析步增量配置"""
 
@@ -289,6 +297,25 @@ class StaticStepConfig(BaseModel):
     max_inc: float = Field(gt=0, default=1.0, description="最大增量")
 
 
+class FieldOutputConfig(BaseModel):
+    """场输出配置"""
+
+    # 输出变量列表
+    variables: List[str] = Field(
+        default=["S", "E", "U", "RF"],
+        description="场输出变量列表 (如 S, E, U, RF, COORD 等)"
+    )
+    # 输出频率
+    frequency: int = Field(
+        ge=1, default=1, description="输出频率 (每 N 个增量步输出一次)"
+    )
+    # 输出位置
+    position: str = Field(
+        default="INTEGRATION_POINTS",
+        description="输出位置: INTEGRATION_POINTS, NODAL, ELEMENT_CENTROID 等"
+    )
+
+
 class StepConfig(BaseModel):
     """单个分析步配置（用于 TOML/YAML 配置）"""
 
@@ -296,11 +323,22 @@ class StepConfig(BaseModel):
         default=StepTypeEnum.STATIC,
         description="分析步类型"
     )
+    # 位移加载（单侧）
+    displacement: Optional[float] = Field(
+        default=None,
+        description="该分析步施加的位移（单侧），省略时该步不施加位移"
+    )
     # 静态分析参数
     max_num_inc: int = Field(ge=1, default=100, description="最大增量步数")
     initial_inc: float = Field(gt=0, default=0.1, description="初始增量")
     min_inc: float = Field(gt=0, default=1e-08, description="最小增量")
     max_inc: float = Field(gt=0, default=1.0, description="最大增量")
+    stabilization_magnitude: float = Field(
+        gt=0, default=0.002, description="稳定化幅度（耗散能比例法）"
+    )
+    adaptive_damping_ratio: float = Field(
+        gt=0, default=0.2, description="自适应阻尼比"
+    )
     # 重启动配置
     enable_restart: bool = Field(default=False, description="是否启用重启动")
     restart_intervals: int = Field(ge=1, default=1, description="重启动间隔")
@@ -314,12 +352,64 @@ class StepConfig(BaseModel):
     explicit: Optional[ExplicitDynamicsConfig] = Field(
         default=None, description="显式动力学配置"
     )
+    # 场输出配置（可选）
+    field_output: Optional[FieldOutputConfig] = Field(
+        default=None, description="场输出配置"
+    )
 
 
 # endregion
 
 
 # region 相互作用配置
+
+
+class MasterSurfaceEnum(str, Enum):
+    """主面选择枚举"""
+    SUBSTRATE_TOP = "substrate_top"
+    WIRE_BOTTOM = "wire_bottom"
+
+
+class SlidingTypeEnum(str, Enum):
+    """接触滑移类型枚举"""
+    FINITE = "finite"  # 有限滑移（默认）
+    SMALL = "small"    # 小滑移
+
+
+class CohesiveConfig(BaseModel):
+    """Cohesive 接触参数配置"""
+
+    # 刚度参数 (Knn, Kss, Ktt)
+    stiffness_normal: float = Field(
+        gt=0, default=1.0e6, description="法向刚度 Knn"
+    )
+    stiffness_shear_1: float = Field(
+        gt=0, default=1.0e6, description="切向刚度 Kss"
+    )
+    stiffness_shear_2: float = Field(
+        gt=0, default=1.0e6, description="切向刚度 Ktt"
+    )
+
+    # 损伤起始准则 - 最大应力
+    max_stress_normal: float = Field(
+        gt=0, default=1.0, description="法向最大应力"
+    )
+    max_stress_shear_1: float = Field(
+        gt=0, default=1.0, description="切向最大应力 1"
+    )
+    max_stress_shear_2: float = Field(
+        gt=0, default=1.0, description="切向最大应力 2"
+    )
+
+    # 损伤演化
+    fracture_energy: float = Field(
+        gt=0, default=0.1, description="断裂能 (N/mm)"
+    )
+
+    # 粘性正则化（稳定损伤演化求解）
+    viscosity_coef: float = Field(
+        ge=0, default=5e-6, description="粘性正则化系数，用于稳定 Cohesive 损伤演化计算"
+    )
 
 
 class InteractionConfig(BaseModel):
@@ -329,19 +419,33 @@ class InteractionConfig(BaseModel):
         default=False, description="是否使用 Cohesive 接触（否则使用 Tie 约束）"
     )
 
-
-# endregion
-
-
-# region 输出配置
-
-
-class OutputConfig(BaseModel):
-    """输出配置"""
-
-    global_output: bool = Field(
-        default=False, description="是否使用全局输出（否则仅 TPC_A 节点）"
+    # 主从面设置
+    master_surface: MasterSurfaceEnum = Field(
+        default=MasterSurfaceEnum.SUBSTRATE_TOP,
+        description="主面选择: substrate_top 或 wire_bottom"
     )
+
+    # 接触滑移类型（use_cohesive=true 时使用）
+    # 注意: Cohesive 接触仅支持 SMALL 滑移
+    sliding: SlidingTypeEnum = Field(
+        default=SlidingTypeEnum.SMALL,
+        description="接触滑移类型: finite（有限滑移）或 small（小滑移）。Cohesive 接触仅支持 small"
+    )
+
+    # Cohesive 参数（use_cohesive=true 时使用）
+    cohesive: Optional[CohesiveConfig] = Field(
+        default=None, description="Cohesive 接触参数"
+    )
+
+    @model_validator(mode="after")
+    def _cohesive_requires_small_sliding(self) -> "InteractionConfig":
+        """Cohesive 接触仅支持小滑移。"""
+        if self.use_cohesive and self.sliding != SlidingTypeEnum.SMALL:
+            raise ValueError(
+                "Cohesive 接触仅支持 small 滑移 (sliding=small)，"
+                "不能与 finite 滑移一起使用"
+            )
+        return self
 
 
 # endregion
@@ -370,16 +474,19 @@ class Config(BaseModel):
     model_config = ConfigDict(extra="ignore")  # 忽略多余的键（如 hydra 内部配置）
 
     substrate: SubstrateConfig
-    loading: LoadingConfig
     wire: WireConfig
-    pores: PoresConfig
+    pores: Optional[PoresConfig] = Field(
+        default=None, description="孔隙配置（仅 substrate.type='porous' 时需要）"
+    )
     computing: ComputingConfig = Field(default_factory=ComputingConfig)
-    analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
     interaction: InteractionConfig = Field(default_factory=InteractionConfig)
-    output: OutputConfig = Field(default_factory=OutputConfig)
     naming: NamingConfig = Field(default_factory=NamingConfig)
+    fix_substrate_bottom_z: bool = Field(
+        default=False,
+        description="是否约束基底底面 z 方向位移（施加 u3=0 边界条件）"
+    )
     steps: List[StepConfig] = Field(
-        default_factory=list, description="分析步配置列表（空列表时使用默认两步配置）"
+        default_factory=list, description="分析步配置列表（空列表表示不创建分析步）"
     )
 
     # 模型名称（生成时设置）
@@ -416,7 +523,7 @@ class Config(BaseModel):
         custom_params = self.naming.custom_params or []
 
         # 参数值映射
-        param_values: dict[str, float | int] = {
+        param_values: dict[str, float | int | str | None] = {
             "n_rows": self.substrate.n_rows,
             "porosity": self.substrate.porosity,
             "T_xi": self.pores.T_xi,
@@ -426,6 +533,17 @@ class Config(BaseModel):
             "seed_size": self.substrate.seed_size,
             "edge_seed_size": self.substrate.edge_seed_size,
         }
+
+        # 添加 Cohesive 参数（如果存在）
+        if self.interaction.cohesive:
+            coh = self.interaction.cohesive
+            param_values["interaction.cohesive.max_stress_normal"] = coh.max_stress_normal
+            param_values["interaction.cohesive.stiffness_normal"] = coh.stiffness_normal
+            param_values["interaction.cohesive.fracture_energy"] = coh.fracture_energy
+
+        # 添加分析步参数（如果存在）
+        if self.steps:
+            param_values["steps.0.step_type"] = self.steps[0].step_type.value
 
         for param in custom_params:
             if param in PARAM_ABBREV and param in param_values:
