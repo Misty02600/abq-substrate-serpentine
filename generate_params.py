@@ -29,8 +29,9 @@ from abq_serp_sub.utils.common_utils import select_files
 # 注册自定义 resolver（必须在 @hydra.main 之前）
 register_resolvers()
 
-# 输出目录
-PARAMS_DIR = Path(__file__).parent / "params"
+# 输出目录（基于启动命令时的当前工作目录）
+# 这样在不同运行目录执行时，参数文件会落在对应目录下的 params/。
+PARAMS_DIR = Path.cwd() / "params"
 
 # ---------------------------------------------------------------------------
 # 运行计数器 & 索引收集

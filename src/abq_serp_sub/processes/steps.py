@@ -34,6 +34,17 @@ from abq_serp_sub.core.context import (
 )
 
 
+DEFAULT_TIME_INCREMENTATION = (4.0, 8.0, 9.0, 16.0, 10.0, 4.0, 12.0, 8.0, 6.0, 3.0, 50.0)
+
+
+def _build_time_incrementation_with_ia(ia: float | None) -> tuple[float, ...]:
+    """构造 timeIncrementation 元组，仅覆盖 IA（第2项）。"""
+    values = list(DEFAULT_TIME_INCREMENTATION)
+    if ia is not None:
+        values[1] = float(ia)
+    return tuple(values)
+
+
 
 # region 创建静态分析步
 def create_step(
@@ -44,6 +55,7 @@ def create_step(
     enable_restart: bool = False,
     restart_intervals: int = 1,
     set_time_incrementation: bool = False,
+    ia: float | None = None,
 ):
     """
     创建分析步（通用函数）。
@@ -60,6 +72,7 @@ def create_step(
         enable_restart (bool): 是否启用重启动功能，默认 False
         restart_intervals (int): 重启动间隔数，默认 1
         set_time_incrementation (bool): 是否设置时间增量控制参数，默认 False
+        ia (float | None): IA 控制参数，仅覆盖 timeIncrementation 第2项
 
     Returns:
         Step: 创建的分析步对象
@@ -98,7 +111,7 @@ def create_step(
         step.control.setValues(
             allowPropagation=OFF,
             resetDefaultValues=OFF,
-            timeIncrementation=(4.0, 8.0, 9.0, 16.0, 10.0, 4.0, 12.0, 8.0, 6.0, 3.0, 50.0),
+            timeIncrementation=_build_time_incrementation_with_ia(ia),
         )
 
     return step
@@ -113,6 +126,8 @@ def create_implicit_dynamics_step(
     previous: str | None = None,
     enable_restart: bool = False,
     restart_intervals: int = 1,
+    set_time_incrementation: bool = False,
+    ia: float | None = None,
 ):
     """
     创建隐式动力学分析步。
@@ -126,6 +141,8 @@ def create_implicit_dynamics_step(
         previous (str | None): 前一个分析步名称，None 时自动生成
         enable_restart (bool): 是否启用重启动功能，默认 False
         restart_intervals (int): 重启动间隔数，默认 1
+        set_time_incrementation (bool): 是否设置时间增量控制参数，默认 False
+        ia (float | None): IA 控制参数，仅覆盖 timeIncrementation 第2项
 
     Returns:
         Step: 创建的隐式动力学分析步对象
@@ -181,6 +198,13 @@ def create_implicit_dynamics_step(
 
     if enable_restart:
         step.Restart(frequency=0, numberIntervals=restart_intervals, overlay=OFF, timeMarks=OFF)
+
+    if set_time_incrementation:
+        step.control.setValues(
+            allowPropagation=OFF,
+            resetDefaultValues=OFF,
+            timeIncrementation=_build_time_incrementation_with_ia(ia),
+        )
 
     return step
 # endregion
@@ -265,6 +289,7 @@ def create_dynamics_step(
     enable_restart: bool = False,
     restart_intervals: int = 1,
     set_time_incrementation: bool = False,
+    ia: float | None = None,
 ):
     """
     创建分析步（统一入口，支持静态/隐式动力学/显式动力学）。
@@ -278,6 +303,7 @@ def create_dynamics_step(
         enable_restart (bool): 是否启用重启动功能（仅适用于静态和隐式动力学）
         restart_intervals (int): 重启动间隔数
         set_time_incrementation (bool): 是否设置时间增量控制（仅适用于静态步）
+        ia (float | None): IA 控制参数，仅覆盖 timeIncrementation 第2项
 
     Returns:
         Step: 创建的分析步对象
@@ -285,6 +311,8 @@ def create_dynamics_step(
     Raises:
         ValueError: 当 step_type 不是有效的 StepType 时
     """
+    effective_set_time_incrementation = set_time_incrementation or (ia is not None)
+
     if step_type == StepType.STATIC:
         return create_step(
             model=model,
@@ -293,7 +321,8 @@ def create_dynamics_step(
             previous=previous,
             enable_restart=enable_restart,
             restart_intervals=restart_intervals,
-            set_time_incrementation=set_time_incrementation,
+            set_time_incrementation=effective_set_time_incrementation,
+            ia=ia,
         )
     elif step_type == StepType.IMPLICIT_DYNAMICS:
         return create_implicit_dynamics_step(
@@ -303,6 +332,8 @@ def create_dynamics_step(
             previous=previous,
             enable_restart=enable_restart,
             restart_intervals=restart_intervals,
+            set_time_incrementation=effective_set_time_incrementation,
+            ia=ia,
         )
     elif step_type == StepType.EXPLICIT_DYNAMICS:
         return create_explicit_dynamics_step(
@@ -481,43 +512,59 @@ def create_steps_from_configs(
 
     created_steps = []
     step_index = 1
+    prev_created_step_name = "Initial"
+    field_output_request_name = "F-Output-1"
+    first_output_position = None
 
     for step_config in step_configs:
+        step_name = step_config.name or f"Step-{step_index}"
+        previous_name = step_config.previous or prev_created_step_name
         step_type = step_config.step_type
         config = step_config.config
         enable_restart = step_config.enable_restart
         restart_intervals = step_config.restart_intervals
         set_time_incrementation = step_config.set_time_incrementation
+        ia = step_config.ia
+        effective_set_time_incrementation = set_time_incrementation or (ia is not None)
         field_output = step_config.field_output
 
         if step_type == StepType.STATIC:
             step = create_step(
                 model=model,
                 config=config,
+                name=step_name,
+                previous=previous_name,
                 enable_restart=enable_restart,
                 restart_intervals=restart_intervals,
-                set_time_incrementation=set_time_incrementation,
+                set_time_incrementation=effective_set_time_incrementation,
+                ia=ia,
             )
         elif step_type == StepType.IMPLICIT_DYNAMICS:
             step = create_implicit_dynamics_step(
                 model=model,
                 config=config,
+                name=step_name,
+                previous=previous_name,
                 enable_restart=enable_restart,
                 restart_intervals=restart_intervals,
+                set_time_incrementation=effective_set_time_incrementation,
+                ia=ia,
             )
         elif step_type == StepType.EXPLICIT_DYNAMICS:
             step = create_explicit_dynamics_step(
                 model=model,
                 config=config,
+                name=step_name,
+                previous=previous_name,
             )
         else:
             raise ValueError(f"不支持的分析步类型: {step_type}")
 
-        # 创建场输出
-        if field_output is not None:
-            step_name = f"Step-{step_index}"
-            fo_name = f"F-Output-{step_index}"
+        # 只在首个分析步创建场输出请求，后续分析步通过 setValuesInStep 修改
+        if step_index == 1 and field_output is not None:
+            fo_name = field_output_request_name
             position = position_map.get(field_output.position, INTEGRATION_POINTS)
+            first_output_position = field_output.position
 
             model.FieldOutputRequest(
                 name=fo_name,
@@ -526,8 +573,26 @@ def create_steps_from_configs(
                 frequency=field_output.frequency,
                 position=position,
             )
+        elif step_index > 1 and field_output is not None:
+            if field_output_request_name in model.fieldOutputRequests:
+                model.fieldOutputRequests[field_output_request_name].setValuesInStep(
+                    stepName=step_name,
+                    variables=field_output.variables,
+                    frequency=field_output.frequency,
+                )
+                if field_output.position != first_output_position:
+                    print(
+                        f"分析步 {step_name} 配置了不同的 field_output.position={field_output.position}，"
+                        f"但 position 仅在首步创建时生效，当前保持为 {first_output_position}"
+                    )
+            else:
+                print(
+                    f"分析步 {step_name} 配置了 field_output，但未找到首步输出请求 {field_output_request_name}，"
+                    f"按配置约定不在后续步骤创建新请求"
+                )
 
         created_steps.append(step)
+        prev_created_step_name = step_name
         step_index += 1
 
     return created_steps

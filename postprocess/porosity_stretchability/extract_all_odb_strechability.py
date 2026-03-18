@@ -20,22 +20,22 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 from extract_strechability import get_overall_critical_summary
 
 
-def run_main_for_all_odb(step_index: int = 1, node_set_name: str = "SUBSTRATE-1.TPC_A"):
+def run_main_for_all_odb(
+    step_index: int = 1,
+    node_set_name: str = "SUBSTRATE-1.TPC_A",
+    csv_path: Path | str | None = None,
+):
     if not session.odbs:
         print("错误：当前会话中没有打开的ODB文件。请先打开至少一个ODB文件。")
         return
 
-    root = tk.Tk()
-    root.withdraw()
-    csv_path_str = filedialog.askopenfilename(
-        title="选择要追加数据的CSV文件（如不存在请取消后重新运行选择保存位置）",
-        filetypes=[("CSV 文件", "*.csv"), ("所有文件", "*.*")]
-    )
-    if not csv_path_str:
-        print("操作已取消：未选择任何文件。")
-        return
-
-    csv_path = Path(csv_path_str) # 转换为Path对象，便于操作
+    if csv_path is None:
+        default_data_dir = _SCRIPT_DIR / "data"
+        default_data_dir.mkdir(parents=True, exist_ok=True)
+        csv_path = default_data_dir / "overall_critical_summary.csv"
+    else:
+        csv_path = Path(csv_path)
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
 
     all_results = []
     total_odbs = len(session.odbs)

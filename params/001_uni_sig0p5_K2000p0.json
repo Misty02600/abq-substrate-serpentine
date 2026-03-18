@@ -1,0 +1,103 @@
+{
+  "substrate": {
+    "type": "solid",
+    "length": 18.0,
+    "width": 13.0,
+    "n_rows": 16,
+    "n_cols": 32,
+    "porosity": 0.5,
+    "square_size": 0.125,
+    "depth": 0.6,
+    "seed_size": 0.05,
+    "edge_seed_size": 0.05,
+    "elem_code": "C3D8RH",
+    "material": null
+  },
+  "wire": {
+    "w": 0.5,
+    "l_1": 6.0,
+    "l_2": 6.0,
+    "m": 3,
+    "seed_size": 0.05,
+    "rotation_angle": 0.0,
+    "rotation_center": "center",
+    "has_end_caps": false,
+    "flip_vertical": true,
+    "pi_thickness": 0.004,
+    "pi_E": null,
+    "pi_nu": null,
+    "pi_density": 1.42e-09,
+    "cu_thickness": 0.0003,
+    "cu_E": null,
+    "cu_nu": null,
+    "cu_density": 8.96e-09
+  },
+  "pores": {
+    "use_standard_circles": false,
+    "T_xi": 0.0,
+    "T_delta": 0.06,
+    "random_seed": 1
+  },
+  "computing": {
+    "num_cpus": 4,
+    "enable_restart": false
+  },
+  "interaction": {
+    "use_cohesive": true,
+    "master_surface": "substrate_top",
+    "sliding": "small",
+    "cohesive": {
+      "stiffness_normal": 2000.0,
+      "stiffness_shear_1": 2000.0,
+      "stiffness_shear_2": 2000.0,
+      "max_stress_normal": 0.5,
+      "max_stress_shear_1": 0.5,
+      "max_stress_shear_2": 0.5,
+      "fracture_energy": 0.003,
+      "viscosity_coef": 5e-06
+    }
+  },
+  "naming": {
+    "custom_params": [
+      "interaction.cohesive.max_stress_normal",
+      "interaction.cohesive.stiffness_normal",
+      "substrate.seed_size",
+      "substrate.elem_code"
+    ]
+  },
+  "fix_substrate_bottom_z": true,
+  "steps": [
+    {
+      "step_type": "implicit",
+      "displacement": 4.0,
+      "max_num_inc": 10000,
+      "initial_inc": 0.02,
+      "min_inc": 1e-08,
+      "max_inc": 0.02,
+      "stabilization_magnitude": 0.002,
+      "adaptive_damping_ratio": 0.2,
+      "enable_restart": true,
+      "restart_intervals": 3,
+      "set_time_incrementation": true,
+      "implicit": null,
+      "explicit": null,
+      "field_output": {
+        "variables": [
+          "LE",
+          "U",
+          "CSTRESS",
+          "CFORCE",
+          "ENER",
+          "ELEN",
+          "CSDMG",
+          "CSMAXSCRT",
+          "CSMAXUCRT",
+          "CSQUADSCRT"
+        ],
+        "frequency": 1,
+        "position": "INTEGRATION_POINTS"
+      }
+    }
+  ],
+  "modelname": "001_uni_sig0p5_K2000p0"
+}

@@ -319,6 +319,15 @@ class FieldOutputConfig(BaseModel):
 class StepConfig(BaseModel):
     """单个分析步配置（用于 TOML/YAML 配置）"""
 
+    name: Optional[str] = Field(
+        default=None,
+        description="分析步名称，省略时自动命名为 Step-1/Step-2/..."
+    )
+    previous: Optional[str] = Field(
+        default=None,
+        description="前序分析步名称，省略时自动推断（首步为 Initial，其余接前一步）"
+    )
+
     step_type: StepTypeEnum = Field(
         default=StepTypeEnum.STATIC,
         description="分析步类型"
@@ -344,6 +353,11 @@ class StepConfig(BaseModel):
     restart_intervals: int = Field(ge=1, default=1, description="重启动间隔")
     set_time_incrementation: bool = Field(
         default=True, description="是否设置时间增量控制"
+    )
+    ia: Optional[float] = Field(
+        default=None,
+        gt=0,
+        description="通用控制参数 IA，仅覆盖 timeIncrementation 第2项"
     )
     # 隐式/显式动力学参数（可选）
     implicit: Optional[ImplicitDynamicsConfig] = Field(

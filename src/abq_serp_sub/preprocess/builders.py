@@ -328,8 +328,11 @@ def build_steps_config(steps_list: list[dict]) -> tuple[AnalysisStepConfig, ...]
             )
 
         step_config = AnalysisStepConfig(
+            name=step_dict.get("name", None),
+            previous=step_dict.get("previous", None),
             step_type=step_type,
             config=config,
+            ia=step_dict.get("ia", None),
             displacement=step_dict.get("displacement", None),
             enable_restart=step_dict.get("enable_restart", False),
             restart_intervals=step_dict.get("restart_intervals", 1),

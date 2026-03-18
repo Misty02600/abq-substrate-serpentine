@@ -23,7 +23,7 @@ def disable_all_viewport_annotations():
     # 关闭所有视口注释选项和图例框
     vp.viewportAnnotationOptions.setValues(
         triad=OFF,
-        legend=OFF,
+        legend=ON,
         title=OFF,
         state=OFF,
         annotations=OFF,

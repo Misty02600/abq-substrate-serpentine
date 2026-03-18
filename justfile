@@ -51,22 +51,22 @@ build-json:
 
 # 生成参数文件
 generate *ARGS:
-    uv run python generate_params.py {{ARGS}}
+    uv run --project "{{root}}" python "{{root}}/generate_params.py" {{ARGS}}
 
 # 交互式选择 YAML 配置并生成参数文件
 generate-select *ARGS:
-    uv run python generate_params.py --select-config {{ARGS}}
+    uv run --project "{{root}}" python "{{root}}/generate_params.py" --select-config {{ARGS}}
 
 # 运行测试
 test *ARGS:
-    uv run pytest tests/ {{ARGS}}
+    uv run --project "{{root}}" pytest "{{root}}/tests/" {{ARGS}}
 
 # 安装/更新依赖
 install:
-    uv sync
+    uv sync --project "{{root}}"
 
 # --- ABAQUS 环境初始化 ---
 
 # 将本包和 pandas 安装到 ABAQUS Python（换机器/升级 ABAQUS 后运行一次）
 setup-abaqus:
-    abaqus python -m pip install -e .
+    abaqus python -m pip install -e "{{root}}"

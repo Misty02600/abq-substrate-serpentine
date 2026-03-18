@@ -1,0 +1,295 @@
+
+# region 通用示例配置文件 - ABAQUS 蛇形导线仿真
+#
+# 本文件是参数化有限元仿真的配置模板。
+# 用法说明：
+#   1. RUN 模式（单次运行）：设置 hydra.mode 为 RUN
+#   2. MULTIRUN 模式（批量扫参）：设置 hydra.mode 为 MULTIRUN，配置 sweeper 参数
+#
+# 参数扫描方式：
+#   - grid_params: 笛卡尔积（所有参数组合）
+#   - list_params: 一一配对（zip 方式）
+#
+# 派生值 Resolvers:
+#   - ${imul: a, b}: 整数乘法 (a * b)
+#   - ${div: a, b}: 整数除法 (a / b)
+#   - ${sweep: start, stop, step}: 范围生成 (start 到 stop，步长为 step)
+#
+# 配置合并顺序:
+#   - _self_: 本文件配置位置（前面表示后续可覆盖）
+#   - override hydra/sweeper: list: 使用 hydra-list-sweeper 插件
+
+defaults:
+  - _self_
+  - override hydra/sweeper: list
+
+# endregion
+
+# region Hydra 框架配置
+hydra:
+  # 运行模式选择：RUN（单次）或 MULTIRUN（扫参）
+  mode: RUN
+
+  # 输出目录配置
+  run:
+    dir: .                          # 单次运行的输出目录
+  sweep:
+    dir: .                          # 批量扫参的根输出目录
+    subdir: .                       # 单个参数组合的子目录
+  output_subdir: null               # 禁用 .hydra/ 子目录
+
+  # 参数扫描配置（仅在 mode: MULTIRUN 时有效）
+  sweeper:
+    # ---- 笛卡尔积扫参 ----
+    # 格式: param: value1,value2,value3 或 param: ${sweep:start,stop,step}
+    # 结果: 所有参数组合 (组合数 = 各参数值数的乘积)
+    grid_params:
+      # 示例参数扫描（取消注释以启用）：
+      # interaction.cohesive.max_stress_normal: ${sweep: 0.5, 2.0, 0.5}  # 0.5, 1.0, 1.5, 2.0
+      # interaction.cohesive.stiffness_normal: 1000,2000,5000             # 3个值
+      # substrate.seed_size: 0.02,0.05,0.1                               # 3个值
+      # substrate.elem_code: C3D8R,C3D8RH                                 # 2个值
+      # 组合结果: 4 × 3 × 3 × 2 = 72 个仿真
+
+    # ---- 配对扫参 ----
+    # 格式: 多个参数按索引一一配对
+    # 示例: 3个值，生成3个参数组合
+    # list_params:
+    #   param_a: 1.0, 2.0, 3.0
+    #   param_b: 10, 20, 30
+    #   # 结果: (1.0,10), (2.0,20), (3.0,30)
+
+# endregion
+
+# region 基底（Substrate）配置
+substrate:
+  # 基底类型：solid（实心）或 porous（多孔）
+  # 选择 solid：使用 length/width 定义尺寸，用于简单的平面基底
+  # 选择 porous：使用孔隙网格定义，用于多孔材料结构
+  type: solid
+
+  # ---- 通用参数 ----
+  # 基底厚度
+  depth: 0.6
+
+  # 网格划分步长（较小的值产生更精细网格，增加计算量）
+  seed_size: 0.05
+
+  # 单元类型定义
+  # 常用选项:
+  #   C3D8R:  8节点线性减缩积分六面体（推荐用于一般分析）
+  #   C3D8RH: 带沙漏控制的减缩积分六面体（改进的减缩积分，增加稳定性）
+  #   C3D8H:  8节点线性杂交六面体（用于不可压缩材料）
+  elem_code: C3D8RH
+
+  # ---- 多孔基底参数 (仅当 type=porous 时使用) ----
+  # 孔隙行数
+  n_rows: 16
+
+  # 孔隙列数（派生参数：n_rows 的倍数）
+  n_cols: ${imul: ${substrate.n_rows}, 2}  # n_rows × 2 = 32
+
+  # 孔隙率（0~1，表示孔隙体积占比）
+  # 示例: 0.5 表示50%的孔隙体积
+  porosity: 0.5
+
+  # 单个方形孔隙的尺寸（派生参数）
+  square_size: ${div: 2, ${substrate.n_rows}}  # 2 / n_rows
+
+  # 边界网格步长（与主网格步长保持一致）
+  edge_seed_size: ${substrate.seed_size}
+
+  # ---- 实心基底参数 (仅当 type=solid 时使用) ----
+  # 基底长度（X 方向）
+  length: 8.0
+
+  # 基底宽度（Y 方向）
+  width: 11.0
+
+  # ---- 材料参数 (可选) ----
+  # 注释掉以使用默认材料（PDMS）
+  # 默认值: C1=0.27027, C2=0.067568, D=0.12, density=9.7e-10
+  # material:
+  #   density: 9.7e-10      # 单位: tonne/mm³ (PDMS ~970 kg/m³)
+  #   c1: 0.27027           # 超弹性常数
+  #   c2: 0.067568          # 超弹性常数
+  #   d: 0.12               # 不可压缩性参数# endregion
+
+# region 导线（Wire）配置
+# 蛇形导线通常采用 PI-Cu-PI 三层复合结构
+# PI (聚酰亚胺): 绝缘层
+# Cu (铜): 导电层
+
+wire:
+  # ---- 几何参数 ----
+  # 蛇形宽度
+  w: 0.5
+
+  # 第一段长度
+  l_1: 6.0
+
+  # 第二段长度
+  l_2: 6.0
+
+  # 波数（蛇形周期数）
+  m: 1
+
+  # 网格划分步长
+  seed_size: 0.05
+
+  # 旋转角度（绕 Z 轴旋转导线，单位: 度）
+  rotation_angle: 0
+
+  # 旋转中心指定
+  # 选项: origin (原点), center (几何中心), 或 [x, y, z] (自定义点)
+  rotation_center: center
+
+  # 是否包含端部盖
+  has_end_caps: false
+
+  # 是否垂直翻转
+  flip_vertical: true
+
+  # ---- PI 层（绝缘层）参数 ----
+  # PI 厚度（单位: mm，示例: 0.004 mm = 4 μm）
+  pi_thickness: 0.004
+
+  # PI 杨氏模量（可选，注释表示使用默认值 2500 MPa）
+  # pi_E: 2500.0
+
+  # PI 泊松比（可选，注释表示使用默认值 0.27）
+  # pi_nu: 0.27
+
+  # PI 材料密度（单位: tonne/mm³）
+  # 重要：动力学分析必须指定此参数，否则将无法计算质量
+  # 转换: PI ~1420 kg/m³ = 1.42e-9 tonne/mm³
+  pi_density: 1.42e-9
+
+  # ---- Cu 层（导电层）参数 ----
+  # Cu 厚度（单位: mm，示例: 0.0003 mm = 300 nm）
+  cu_thickness: 0.0003
+
+  # Cu 杨氏模量（可选，注释表示使用默认值 130000 MPa）
+  # cu_E: 130000.0
+
+  # Cu 泊松比（可选，注释表示使用默认值 0.34）
+  # cu_nu: 0.34
+
+  # Cu 材料密度（单位: tonne/mm³）
+  # 重要：动力学分析必须指定此参数
+  # 转换: Cu ~8960 kg/m³ = 8.96e-9 tonne/mm³
+  cu_density: 8.96e-9
+
+# endregion
+
+# region 孔隙配置
+pores:
+  use_standard_circles: false
+  T_xi: 0
+  T_delta: 0.06
+  random_seed: 1
+
+# endregion
+
+# region 边界条件配置
+# 是否约束基底底面 z 方向位移（施加 u3=0）
+#   - false: 仅通过两个角点（TPC_A/TPC_B）约束 z 方向（默认，三点式约束）
+#   - true:  对整个底面施加 u3=0 约束
+fix_substrate_bottom_z: true
+
+# endregion
+
+# region 计算配置
+computing:
+  num_cpus: 4
+  enable_restart: false
+
+# endregion
+
+# region 分析配置
+analysis:
+  stabilization_magnitude: 0.002
+  adaptive_damping_ratio: 0.2
+
+# endregion
+
+# region 相互作用配置
+# use_cohesive: 导线与基底的连接方式
+#   - false: Tie 约束（永久绑定，不可分离）
+#   - true:  Cohesive 接触（可分层/解除绑定）
+# master_surface: 主面选择
+#   - substrate_top: 基底顶面为主面
+#   - wire_bottom: 导线底面为主面
+# sliding: 接触滑移类型
+#   - finite: 有限滑移（适用于大变形，不可与 Cohesive 一起使用）
+#   - small: 小滑移（默认，Cohesive 接触必须使用此选项）
+interaction:
+  use_cohesive: true
+  master_surface: substrate_top
+  sliding: small
+
+  # Cohesive 参数（use_cohesive=true 时使用）
+  cohesive:
+    # 刚度 (Knn, Kss, Ktt)
+    stiffness_normal: 2000
+    stiffness_shear_1: ${interaction.cohesive.stiffness_normal}
+    stiffness_shear_2: ${interaction.cohesive.stiffness_normal}
+    # 损伤起始准则 - 最大应力
+    max_stress_normal: 0.5      # 默认值，被 sweeper 覆盖
+    max_stress_shear_1: ${interaction.cohesive.max_stress_normal}
+    max_stress_shear_2: ${interaction.cohesive.max_stress_normal}
+    # 损伤演化
+    fracture_energy: 0.003
+
+# endregion
+
+# region 命名配置
+naming:
+  custom_params:
+    - interaction.cohesive.max_stress_normal
+    - interaction.cohesive.stiffness_normal
+    - substrate.seed_size
+    - substrate.elem_code
+
+# endregion
+
+# region 分析步配置（可选，空列表使用默认两步）
+steps:
+  # Step-1: 预加载步
+  # step_type 可选值: static | implicit | explicit
+  # 切换方式: 只需改 step_type，其余参数共用（max_inc 仅 static 有效，implicit 忽略）
+  # implicit 默认: time_period=1.0, nlgeom=true, application=QUASI_STATIC,
+  #                amplitude=RAMP, alpha=DEFAULT, nohaf=OFF
+  # 如需覆盖 implicit 默认值，直接在顶层添加 time_period / nlgeom，
+  # 或添加 implicit: { amplitude: STEP, nohaf: true, ... } 子节点
+  - step_type: implicit
+    displacement: 4                  # 该步施加的位移（单侧），省略时该步不施加位移
+    max_num_inc: 10000
+    initial_inc: 0.02
+    min_inc: 1.0e-08
+    max_inc: 0.02
+    enable_restart: true
+    restart_intervals: 3
+    set_time_incrementation: true
+    ia: 8                            # 仅修改通用控制参数 IA（timeIncrementation 第2项）
+    # 场输出配置
+    field_output:
+      variables: [LE,U,CSTRESS,CFORCE,ENER,ELEN,CSDMG,CSMAXSCRT,CSMAXUCRT,CSQUADSCRT]
+      frequency: 1
+      position: INTEGRATION_POINTS  # INTEGRATION_POINTS, NODAL, ELEMENT_CENTROID
+
+  # Step-2: 拉伸步
+  # - step_type: static
+  #   displacement: 6               # 第二步位移
+  #   max_num_inc: 10000
+  #   initial_inc: 0.02
+  #   min_inc: 1.0e-08
+  #   max_inc: 0.05
+  #   enable_restart: false
+  #   restart_intervals: 2
+  #   set_time_incrementation: false
+  #   field_output:
+  #     variables: [S, E, U, RF]
+  #     frequency: 5
+
+# endregion

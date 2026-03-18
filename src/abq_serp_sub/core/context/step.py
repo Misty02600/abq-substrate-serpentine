@@ -217,16 +217,22 @@ class AnalysisStepConfig:
     用于在 ModelConfig 中以列表形式管理多个分析步。
 
     Attributes:
+        name: 分析步名称，None 时自动命名（Step-1, Step-2, ...）
+        previous: 前序分析步名称，None 时自动推断（首步为 Initial，后续接前一步）
         step_type: 分析步类型（静态/隐式动力学/显式动力学）
         config: 对应类型的配置，None 时使用默认值
+        ia: 通用控制参数 IA（仅修改 timeIncrementation 的第2项）
         displacement: 该分析步施加的位移（单侧），None 表示该步不施加位移
         enable_restart: 是否启用重启动功能
         restart_intervals: 重启动间隔数
         set_time_incrementation: 是否设置时间增量控制（仅适用于静态步）
         field_output: 场输出配置
     """
+    name: Optional[str] = None
+    previous: Optional[str] = None
     step_type: StepType = StepType.STATIC
     config: StepConfigType | None = None
+    ia: Optional[float] = None
     displacement: Optional[float] = None
     enable_restart: bool = False
     restart_intervals: int = 1

@@ -303,7 +303,7 @@ def create_model(config: ModelConfig) -> "Model":
     for i, step_cfg in enumerate(steps, start=1):
         disp = step_cfg.displacement
         if disp is not None:
-            step_name = f"Step-{i}"
+            step_name = step_cfg.name or f"Step-{i}"
             mdb.models[modelname].boundaryConditions["left-U"].setValuesInStep(
                 stepName=step_name, u1=-disp
             )

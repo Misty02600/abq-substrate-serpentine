@@ -10,7 +10,7 @@ import sys
 import os
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import messagebox
 
 from abaqus import *
 from abaqusConstants import *
@@ -86,7 +86,12 @@ def select_variable():
     return result[0]
 
 
-def extract_all_odb_wire_displacement(step=1, frame=None, variable_name=None):
+def extract_all_odb_wire_displacement(
+    step=1,
+    frame=None,
+    variable_name=None,
+    save_dir: Path | str | None = None,
+):
     """
     批量提取所有已打开 ODB 的 Wire 位移数据并保存为 CSV 文件
 
@@ -109,17 +114,11 @@ def extract_all_odb_wire_displacement(step=1, frame=None, variable_name=None):
         print("请先打开至少一个 ODB 文件。")
         return
 
-    # 使用 tkinter 选择保存文件夹
-    save_dir = filedialog.askdirectory(
-        title="选择 CSV 文件保存文件夹",
-        initialdir=os.getcwd()
-    )
-
-    if not save_dir:
-        print("操作已取消: 未选择保存文件夹。")
-        return
-
-    save_dir_path = Path(save_dir)
+    if save_dir is None:
+        save_dir_path = _SCRIPT_DIR / "data"
+    else:
+        save_dir_path = Path(save_dir)
+    save_dir_path.mkdir(parents=True, exist_ok=True)
     print(f"CSV 文件将保存到: {save_dir_path}")
 
     # 统计信息
